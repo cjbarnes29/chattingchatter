@@ -4,6 +4,7 @@ import { useAuth } from '../auth'
 import { useRef, useState } from 'react'
 import { useEdits } from '../edits'
 import { readGesturePrefs } from '../prefs'
+import { useAppearance } from '../appearance'
 
 type Props = {
   chats: Chat[]
@@ -74,6 +75,7 @@ function SwipeRow({ chat, enabled, archived, onPin, onArchive, children }: { cha
 
 export default function ChatList({ chats: rawChats, activeId, query, onQuery, onSelect, dark, onToggleDark, onOpenSettings, onUpgrade, onNewChat, onOpenContacts, showArchived, archivedCount, onToggleArchived, isPro, stories, onNewGroup, onPinChat, onArchiveChat }: Props) {
   const { user } = useAuth()
+  const ap = useAppearance()
   const [tab, setTab] = useState<'all' | 'fav' | 'groups' | 'unread'>('all')
   const edits = useEdits()
   const chats = rawChats.map((c) => {
@@ -93,7 +95,7 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
 
   return (
     <aside className="flex h-full w-full flex-col bg-[rgb(var(--bg-panel))] md:w-[380px] md:min-w-[320px] md:border-l md:border-[rgb(var(--border))]">
-      <header className="flex items-center justify-between px-5 pt-5 pb-3">
+      <header className={`flex items-center justify-between px-5 pt-5 pb-3 ${ap.navColor ? 'nav-custom' : ''}`}>
         <div>
           <h1 className="text-2xl font-extrabold tracking-tight">{showArchived ? 'Archived' : 'Inbox'}</h1>
           <p className="text-xs text-[rgb(var(--text-secondary))]">{chats.length} conversations</p>
@@ -163,7 +165,7 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
       {stories}
       <div className="flex items-center gap-1.5 overflow-x-auto px-4 pb-2" role="tablist">
         {TABS.map((t) => (
-          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${tab === t.id ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]' : 'bg-[rgb(var(--bg-panel-soft))] text-[rgb(var(--text-secondary))]'}`}>
+          <button key={t.id} role="tab" aria-selected={tab === t.id} onClick={() => setTab(t.id)} className={`shrink-0 rounded-full px-3 py-1.5 text-xs font-semibold transition ${tab === t.id ? 'bg-[rgb(var(--tab-active))] text-[rgb(var(--tab-active-fg))]' : 'bg-[rgb(var(--bg-panel-soft))] text-[rgb(var(--text-secondary))]'}`}>
             {t.label}{t.id !== 'all' && t.n > 0 ? ` ${t.n}` : ''}
           </button>
         ))}

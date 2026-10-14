@@ -3,6 +3,8 @@ import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, Chev
 import { useAuth } from '../auth'
 import { usePro } from '../pro'
 import ProSettings from './ProSettings'
+import AccountSettings from './AccountSettings'
+import AppearanceSettings from './AppearanceSettings'
 import FeatureSettings from './FeatureSettings'
 import { PinGate } from './PinGate'
 import { useNotifPrefs, usePrivacyPrefs } from '../prefs'
@@ -52,20 +54,18 @@ const SubTitle = ({ children }: { children: React.ReactNode }) => (
 )
 
 export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade, decoy = false }: Props) {
-  const { user, logout, updateProfile, setNewPassword, changeEmail, uploadAvatar } = useAuth()
+  const { user, logout, updateProfile, uploadAvatar } = useAuth()
   const { hasPins, isPro } = usePro()
   const [page, setPage] = useState<Page | null>(null)
   const [confirmOut, setConfirmOut] = useState(false)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoMsg, setPhotoMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [newPw, setNewPw] = useState('')
-  const [newPw2, setNewPw2] = useState('')
-  const [newEmail, setNewEmail] = useState('')
-  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [emMsg, setEmMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const [acctBusy, setAcctBusy] = useState(false)
   const [name, setName] = useState(user?.name ?? '')
   const [about, setAbout] = useState(user?.about ?? '')
+  const [nickname, setNickname] = useState(user?.nickname ?? '')
+  const [age, setAge] = useState(user?.age ? String(user.age) : '')
+  const [status, setStatus] = useState(user?.status ?? '')
+  const [profErr, setProfErr] = useState('')
   const [saved, setSaved] = useState(false)
   const [privacy, setPrivacy] = usePrivacyPrefs()
   const [notifs, setNotifs] = useNotifPrefs()
@@ -90,26 +90,6 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
     setPhotoMsg(r.ok ? { ok: true, text: 'Profile photo updated.' } : { ok: false, text: r.error })
   }
 
-  const doPassword = async () => {
-    if (newPw !== newPw2) return setPwMsg({ ok: false, text: 'Passwords do not match.' })
-    setAcctBusy(true)
-    const r = await setNewPassword(newPw)
-    setAcctBusy(false)
-    if (r.ok) {
-      setPwMsg({ ok: true, text: 'Password updated.' })
-      setNewPw('')
-      setNewPw2('')
-    } else setPwMsg({ ok: false, text: r.error })
-  }
-  const doEmail = async () => {
-    setAcctBusy(true)
-    const r = await changeEmail(newEmail)
-    setAcctBusy(false)
-    if (r.ok) {
-      setEmMsg({ ok: true, text: `Confirmation sent. Check ${newEmail.trim()} (and your current inbox) to finish the change.` })
-      setNewEmail('')
-    } else setEmMsg({ ok: false, text: r.error })
-  }
   const toggleBio = async (v: boolean) => {
     setBioMsg(null)
     if (!v) {
@@ -125,7 +105,10 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
     } else setBioMsg({ ok: false, text: r.error ?? 'Could not turn on biometrics.' })
   }
   const save = () => {
-    updateProfile({ name: name.trim() || user.name, about: about.trim() })
+    const ageNum = age.trim() ? Number(age) : null
+    if (ageNum !== null && (!Number.isInteger(ageNum) || ageNum < 13 || ageNum > 120)) return setProfErr('Age must be a whole number from 13 to 120, or leave it empty.')
+    setProfErr('')
+    updateProfile({ name: name.trim() || user.name, about: about.trim(), nickname: nickname.trim(), age: ageNum, status: status.trim() })
     setSaved(true)
     window.setTimeout(() => setSaved(false), 1600)
   }
@@ -139,14 +122,13 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
   }
 
   const accField = 'w-full rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3.5 py-3 text-sm outline-none ring-1 ring-transparent focus:ring-[rgb(var(--accent))]'
-  const accBtn = 'w-full rounded-xl border border-[rgb(var(--border))] py-2.5 text-sm font-semibold transition hover:bg-[rgb(var(--accent-soft))] disabled:opacity-60'
   const label = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--text-tertiary))]'
   const divider = 'divide-y divide-[rgb(var(--border))]'
 
   const MENU: { id: Page; icon: React.ReactNode; title: string; desc: string; hideInDecoy?: boolean }[] = [
-    { id: 'profile', icon: <User size={16} />, title: 'Profile', desc: 'Photo, name and about', hideInDecoy: true },
-    { id: 'account', icon: <KeyRound size={16} />, title: 'Account', desc: 'Email and password', hideInDecoy: true },
-    { id: 'appearance', icon: dark ? <Moon size={16} /> : <Sun size={16} />, title: 'Appearance', desc: dark ? 'Dark mode is on' : 'Light mode is on' },
+    { id: 'profile', icon: <User size={16} />, title: 'Profile', desc: 'Photo, name, nickname, age and status', hideInDecoy: true },
+    { id: 'account', icon: <KeyRound size={16} />, title: 'Account', desc: 'Password, email and security question', hideInDecoy: true },
+    { id: 'appearance', icon: dark ? <Moon size={16} /> : <Sun size={16} />, title: 'Appearance', desc: 'Text, colours, chat screen and animations' },
     { id: 'privacy', icon: <ShieldCheck size={16} />, title: 'Privacy & security', desc: 'Receipts, locks, PIN and decoy PIN', hideInDecoy: true },
     { id: 'notifications', icon: <Bell size={16} />, title: 'Notifications & sounds', desc: 'Previews, quick replies, sounds, alarms' },
     { id: 'gestures', icon: <Hand size={16} />, title: 'Chats & gestures', desc: 'Swipes, taps and shortcuts' },
@@ -235,10 +217,30 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
                   <span className={label}>Display name</span>
                   <input value={name} onChange={(e) => setName(e.target.value)} maxLength={40} className={accField} />
                 </label>
+                <div className="grid grid-cols-[1fr_6rem] gap-3">
+                  <label className="block">
+                    <span className={label}>Nickname</span>
+                    <input value={nickname} onChange={(e) => setNickname(e.target.value)} maxLength={30} placeholder="What friends call you" className={accField} />
+                  </label>
+                  <label className="block">
+                    <span className={label}>Age</span>
+                    <input inputMode="numeric" value={age} onChange={(e) => setAge(e.target.value.replace(/\D/g, '').slice(0, 3))} placeholder="—" className={accField} />
+                  </label>
+                </div>
+                <label className="block">
+                  <span className={label}>Status</span>
+                  <input value={status} onChange={(e) => setStatus(e.target.value)} maxLength={50} placeholder="Available, Busy, At work…" className={accField} />
+                  <span className="mt-2 flex flex-wrap gap-1.5">
+                    {['Available', 'Busy', 'At work', 'In class', 'Sleeping', 'On holiday'].map((s) => (
+                      <button key={s} type="button" onClick={() => setStatus(s)} className="rounded-full bg-[rgb(var(--bg-panel-soft))] px-2.5 py-1 text-[11px] font-medium text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">{s}</button>
+                    ))}
+                  </span>
+                </label>
                 <label className="block">
                   <span className={label}>About</span>
                   <textarea value={about} onChange={(e) => setAbout(e.target.value)} rows={2} maxLength={139} className={`${accField} resize-none`} />
                 </label>
+                {profErr && <p role="alert" className="text-xs text-rose-500">{profErr}</p>}
                 <button onClick={save} className="flex w-full items-center justify-center gap-2 rounded-xl bg-[rgb(var(--accent))] py-3 text-sm font-semibold text-[rgb(var(--accent-foreground))] transition hover:opacity-90">
                   {saved ? <><Check size={16} /> Saved</> : 'Save profile'}
                 </button>
@@ -247,30 +249,10 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
           )}
 
           {page === 'account' && (
-            <div className="space-y-6 px-5 pt-5">
-              <div className="space-y-2.5">
-                <p className="text-sm font-semibold">Change email</p>
-                <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="New email address" autoComplete="email" className={accField} />
-                {emMsg && <p className={`text-xs ${emMsg.ok ? 'text-emerald-500' : 'text-rose-500'}`}>{emMsg.text}</p>}
-                <button onClick={doEmail} disabled={acctBusy || !newEmail} className={accBtn}>Update email</button>
-              </div>
-              <div className="space-y-2.5">
-                <p className="text-sm font-semibold">Change password</p>
-                <input type="password" value={newPw} onChange={(e) => setNewPw(e.target.value)} placeholder="New password" autoComplete="new-password" className={accField} />
-                <input type="password" value={newPw2} onChange={(e) => setNewPw2(e.target.value)} placeholder="Confirm new password" autoComplete="new-password" className={accField} />
-                {pwMsg && <p className={`text-xs ${pwMsg.ok ? 'text-emerald-500' : 'text-rose-500'}`}>{pwMsg.text}</p>}
-                <button onClick={doPassword} disabled={acctBusy || !newPw} className={accBtn}>Update password</button>
-              </div>
-            </div>
+            <AccountSettings />
           )}
 
-          {page === 'appearance' && (
-            <div className={divider}>
-              <Row icon={dark ? <Moon size={16} /> : <Sun size={16} />} title="Dark mode" desc="Easier on the eyes at night">
-                <Toggle on={dark} onChange={onToggleDark} label="Dark mode" />
-              </Row>
-            </div>
-          )}
+          {page === 'appearance' && <AppearanceSettings dark={dark} onToggleDark={onToggleDark} />}
 
           {page === 'privacy' && (
             <>
@@ -278,9 +260,27 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
                 <Row icon={<Eye size={16} />} title="Read receipts" desc="Show when you've read messages">
                   <Toggle on={privacy.readReceipts} onChange={(v) => setPrivacy({ readReceipts: v })} label="Read receipts" />
                 </Row>
-                <Row icon={<ShieldCheck size={16} />} title="Last seen" desc="Let contacts see when you were active">
-                  <Toggle on={privacy.lastSeen} onChange={(v) => setPrivacy({ lastSeen: v })} label="Last seen" />
-                </Row>
+                <div className="px-4 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[rgb(var(--accent-soft))] text-[rgb(var(--accent))]"><ShieldCheck size={16} /></div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">Online status</p>
+                      <p className="text-xs text-[rgb(var(--text-secondary))]">Choose what your contacts see</p>
+                    </div>
+                  </div>
+                  <div className="mt-3 grid gap-2">
+                    {([
+                      ['auto', 'Automatic', 'Online while you use Chatter, then your last-seen time'],
+                      ['online', 'Always appear online', 'Contacts see you online even when you are away'],
+                      ['offline', 'Appear offline', 'Contacts always see you as offline'],
+                    ] as const).map(([id, t, d]) => (
+                      <button key={id} aria-pressed={user.presence === id} onClick={() => updateProfile({ presence: id })} className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-left ring-1 transition ${user.presence === id ? 'bg-[rgb(var(--accent-soft))] ring-[rgb(var(--accent))]' : 'ring-[rgb(var(--border))] hover:bg-[rgb(var(--bg-panel-soft))]'}`}>
+                        <span className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-full ring-2 ${user.presence === id ? 'ring-[rgb(var(--accent))]' : 'ring-[rgb(var(--border))]'}`}>{user.presence === id && <span className="h-2 w-2 rounded-full bg-[rgb(var(--accent))]" />}</span>
+                        <span className="min-w-0"><span className="block text-sm font-semibold">{t}</span><span className="block text-xs text-[rgb(var(--text-secondary))]">{d}</span></span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
                 <Row icon={<Lock size={16} />} title="Biometric lock" desc="Require Face ID, Touch ID or passcode for locked chats">
                   <Toggle on={bioOn} onChange={toggleBio} label="Biometric lock" />
                 </Row>

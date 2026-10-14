@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { Bell, BellRing, Brush, CalendarDays, Camera, Check, Ghost, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { Bell, BellRing, Brush, CalendarDays, Camera, Check, Crown, Ghost, Plus, RotateCcw, Trash2 } from 'lucide-react'
+import { usePro } from '../pro'
 import { useCalPrefs, useGhostPrefs, useGesturePrefs, INK_COLORS } from '../prefs'
 import { useDecoyItems, updateDecoy, removeDecoy, addDecoy, resetDecoys } from '../decoyStore'
 import { fileToAvatar } from '../edits'
@@ -41,6 +42,7 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
   const cs = useChatStyle()
   const [gest, setGest] = useGesturePrefs()
   const decoys = useDecoyItems()
+  const pro = usePro()
   const pickDecoyPhoto = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]
     e.target.value = ''
@@ -85,8 +87,9 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
     return (
       <div className="space-y-3 px-5 py-2">
         <p className="text-xs text-[rgb(var(--text-secondary))]">These are the harmless chats shown when you enter your decoy PIN. Edit names, messages and times so it looks believable. Set the decoy PIN itself under Privacy &amp; security.</p>
-        {decoys.map((d) => (
-          <div key={d.id} className="flex items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-3">
+        {!pro.isPro && <p className="flex items-center gap-1.5 rounded-xl bg-[rgb(var(--accent-soft))] px-3 py-2 text-xs font-semibold text-[rgb(var(--accent))]"><Crown size={13} /> Free plan shows 1 decoy chat. Chatter Pro shows as many as you like.</p>}
+        {decoys.map((d, idx) => (
+          <div key={d.id} className={`flex items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-3 ${!pro.isPro && idx > 0 ? 'opacity-45' : ''}`}>
             <label className="relative shrink-0 cursor-pointer" aria-label={`Change photo for ${d.name}`}>
               <img src={d.avatar} alt="" className="h-12 w-12 rounded-full object-cover" />
               <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"><Camera size={10} /></span>
@@ -101,7 +104,7 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
           </div>
         ))}
         <div className="flex items-center justify-between">
-          <button onClick={addDecoy} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--accent))] px-3 py-1.5 text-xs font-semibold text-[rgb(var(--accent-foreground))]"><Plus size={13} /> Add decoy chat</button>
+          <button onClick={addDecoy} disabled={!pro.isPro && decoys.length >= 1} title={!pro.isPro && decoys.length >= 1 ? 'Chatter Pro needed for more than one decoy chat' : undefined} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--accent))] px-3 py-1.5 text-xs font-semibold text-[rgb(var(--accent-foreground))] disabled:opacity-40"><Plus size={13} /> Add decoy chat</button>
           <button onClick={resetDecoys} className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))] hover:underline"><RotateCcw size={12} /> Reset</button>
         </div>
       </div>

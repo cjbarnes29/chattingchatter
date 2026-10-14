@@ -13,6 +13,7 @@ import DecoyApp from './components/DecoyApp'
 import ExitDialog from './components/ExitDialog'
 import GroupCallOverlay from './components/GroupCallOverlay'
 import { useBackTrap, useBackHandler, exitApp } from './backNav'
+import { bioUnlockEnabled, biometricEnrolled } from './biometric'
 import { useGroupCall } from './groupCall'
 import { useTyping } from './typing'
 import { readGesturePrefs, readNotifPrefs } from './prefs'
@@ -42,7 +43,8 @@ export default function Root() {
 
 function Gate() {
   const { user, recovering } = useAuth()
-  const { hasPins } = usePro()
+  const { hasPins, isPro, decoyPinHash } = usePro()
+  const bioUnlock = isPro && bioUnlockEnabled() && biometricEnrolled()
   const [unlocked, setUnlocked] = useState<'none' | 'real' | 'decoy'>('none')
   const [exitOpen, setExitOpen] = useState(false)
   useBackTrap(() => setExitOpen(true))
@@ -79,7 +81,7 @@ function Gate() {
   if (recovering) body = <ResetPassword />
   else if (!user) body = <AuthScreen />
   // The lock is enforced whenever a PIN exists, even if the Pro plan has lapsed
-  else if (hasPins && unlocked === 'none') body = <PinGate onUnlock={() => setUnlocked('real')} onDecoy={() => setUnlocked('decoy')} />
+  else if (hasPins && unlocked === 'none') body = <PinGate onUnlock={() => setUnlocked('real')} onDecoy={() => setUnlocked('decoy')} bioUnlock={bioUnlock} bioDecoy={!!decoyPinHash} />
   else if (unlocked === 'decoy' && hasPins) body = <DecoyApp />
   else body = <App />
 

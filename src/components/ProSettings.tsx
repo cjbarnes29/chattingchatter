@@ -1,6 +1,8 @@
 import { createContext, useContext, useState } from 'react'
-import { Crown, Lock, EyeOff, Clock, Trash2, Check, Brush, Languages } from 'lucide-react'
+import { Crown, Lock, EyeOff, Clock, Trash2, Check, Brush, Languages, Fingerprint } from 'lucide-react'
 import { usePro } from '../pro'
+import { useAuth } from '../auth'
+import { bioUnlockEnabled, setBioUnlockEnabled, biometricEnrolled, enrollBiometric, verifyBiometric } from '../biometric'
 import { useDecoyItems, updateDecoy } from '../decoyStore'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
@@ -37,6 +39,10 @@ export default function ProSettings({ onUpgrade, only }: { onUpgrade: () => void
 
 function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const pro = usePro()
+  const { user } = useAuth()
+  const only = useContext(OnlyCtx)
+  const [bioOn, setBioOn] = useState(() => bioUnlockEnabled())
+  const [bioMsg, setBioMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const decoyItems = useDecoyItems()
   const [pin, setPin] = useState('')
   const [decoy, setDecoy] = useState('')
@@ -56,9 +62,27 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
     window.setTimeout(() => setPinSaved(false), 1600)
   }
 
+  const toggleBioUnlock = async (v: boolean) => {
+    setBioMsg(null)
+    if (!pro.isPro) return onUpgrade()
+    if (!v) {
+      setBioUnlockEnabled(false)
+      setBioOn(false)
+      return setBioMsg({ ok: true, text: 'Fingerprint unlock is off. The PIN is used to unlock.' })
+    }
+    if (!pro.hasPins) return setBioMsg({ ok: false, text: 'Set your real PIN first.' })
+    if (!pro.decoyPinHash) return setBioMsg({ ok: false, text: 'Set a decoy PIN first, so a fingerprint your phone rejects has somewhere to go.' })
+    const r = biometricEnrolled() ? await verifyBiometric() : await enrollBiometric(user?.id ?? 'me', user?.email ?? 'chatter')
+    if (r.ok) {
+      setBioUnlockEnabled(true)
+      setBioOn(true)
+      setBioMsg({ ok: true, text: 'On. Swipe up on the lock screen to unlock with your fingerprint or face.' })
+    } else setBioMsg({ ok: false, text: r.error ?? 'Could not turn on fingerprint unlock.' })
+  }
+
   const f = pro.focus
 
-  if (!pro.isPro) {
+  if (!pro.isPro && only !== 'pin') {
     return (
       <Section title="Chatter Pro">
         <button onClick={onUpgrade} className="flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br from-[#0B1210] to-[#1B3A2E] p-4 text-left text-white">
@@ -88,7 +112,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
       <Section title="PIN lock & decoy profile" id="pin">
         <div className="rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Lock size={15} className="text-[rgb(var(--accent))]" /> PIN lock {pro.hasPins ? <span className="ml-auto flex items-center gap-1 text-xs text-[rgb(var(--accent))]"><Check size={12} /> Set</span> : null}</div>
-          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN at launch and before logging out. 4-digit PINs are confirmed with the check key. Enter the decoy PIN under pressure to open a harmless chat history.</p>
+          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN at launch and before logging out. 4-digit PINs are confirmed with the check key. Enter the decoy PIN under pressure to open a harmless chat history. Everyone gets one decoy chat; Chatter Pro adds more.</p>
           <div className="grid gap-2 sm:grid-cols-2">
             <input inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={pro.hasPins ? 'New real PIN' : 'Real PIN (4–6 digits)'} aria-label="Real PIN" type="password" className="rounded-xl bg-[rgb(var(--bg-panel))] px-3.5 py-2.5 text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]" />
             <input inputMode="numeric" value={decoy} onChange={(e) => setDecoy(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Decoy PIN (optional)" aria-label="Decoy PIN" type="password" className="rounded-xl bg-[rgb(var(--bg-panel))] px-3.5 py-2.5 text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]" />
@@ -114,9 +138,22 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
                   )
                 })}
               </ul>
-              <p className="mt-2 text-[11px] text-[rgb(var(--text-secondary))]">Your real chats are never shown in decoy mode.</p>
+              <p className="mt-2 text-[11px] text-[rgb(var(--text-secondary))]">
+                {pro.isPro ? 'Your real chats are never shown in decoy mode.' : 'Free plan shows the first decoy chat only. Chatter Pro shows them all. Your real chats are never shown in decoy mode.'}
+              </p>
             </div>
           )}
+          <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
+            <div className="flex items-center gap-3">
+              <Fingerprint size={18} className="shrink-0 text-[rgb(var(--accent))]" />
+              <div className="min-w-0 flex-1">
+                <p className="flex items-center gap-1.5 text-sm font-semibold">Fingerprint &amp; face unlock {!pro.isPro && <span className="flex items-center gap-1 rounded-full bg-[rgb(var(--accent-soft))] px-2 py-0.5 text-[10px] font-bold uppercase text-[rgb(var(--accent))]"><Crown size={10} /> Pro</span>}</p>
+                <p className="text-xs text-[rgb(var(--text-secondary))]">Swipe up on the lock screen to unlock. A fingerprint or face your phone does not accept opens your decoy chats. Needs a PIN and a decoy PIN.</p>
+              </div>
+              <Toggle on={pro.isPro && bioOn} onChange={toggleBioUnlock} label="Fingerprint and face unlock" />
+            </div>
+            {bioMsg && <p role="status" className={`mt-2 text-xs ${bioMsg.ok ? 'text-emerald-500' : 'text-rose-500'}`}>{bioMsg.text}</p>}
+          </div>
         </div>
       </Section>
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import {
-  Download, Smartphone, Monitor, Globe, Lock, Sparkles, Brush, Clock, ShieldCheck,
-  Mic, Tags, Crown, Check, ArrowRight, WifiOff, RefreshCw, Play,
+  Download, Smartphone, Globe, Lock, Sparkles, Brush, Clock, ShieldCheck,
+  Mic, Tags, Crown, Check, ArrowRight, WifiOff, RefreshCw, Users, Phone, CalendarDays, Palette, UserRound, Fingerprint,
 } from 'lucide-react'
 import { DOWNLOADS } from '../downloads'
 import { useLatestRelease, findAsset } from '../useLatestRelease'
@@ -52,45 +52,41 @@ function DlButton({ href, icon, label, sub, loading }: { href: string; icon: Rea
 }
 
 const features = [
-  { i: Lock, t: 'Private-message locks', d: 'Lock sensitive threads behind a PIN or biometric gate. A decoy PIN opens harmless chats and hides the rest.' },
-  { i: Sparkles, t: 'On-device smart replies', d: 'Quick reply suggestions and voice-to-text that run on your device, not on someone else’s server.' },
-  { i: Clock, t: 'Timeline Jump', d: 'Leap to any moment in a long conversation instead of scrolling for ages.' },
-  { i: Tags, t: 'Message tags', d: 'Tag the messages that matter, then find them again in a tap.' },
-  { i: Brush, t: 'Ghost Canvas', d: 'A shared space to draw, stick notes, build emoji collages and play tic-tac-toe. Everything fades away on its own.' },
-  { i: Mic, t: 'Typing, receipts and reads', d: 'Grouped bubbles, timestamps, delivery and read ticks, plus live typing indicators.' },
+  { i: Lock, t: 'PIN lock and decoy PIN', d: 'Chatter asks for a PIN when you open it and when you log out. A second, decoy PIN opens a harmless set of chats instead of your real ones. Everyone gets 1 decoy chat.' },
+  { i: Fingerprint, t: 'Locked messages', d: 'Lock individual messages behind your fingerprint, face or phone passcode, on devices that support it.' },
+  { i: Brush, t: 'Ghost Canvas', d: 'A shared space for two people to draw, stick notes, build emoji collages and play tic-tac-toe. Ink and notes fade away on their own. Open it from the ghost button in any one-to-one chat.' },
+  { i: Users, t: 'Groups, stories and contacts', d: 'Group chats with admins, stories that expire, and a contacts list where you can favourite, archive or block people.' },
+  { i: Phone, t: 'Voice and video calls', d: 'Call a friend, or start a call in a group chat. Calls need microphone and camera permission and are still in beta.' },
+  { i: CalendarDays, t: 'Shared calendar', d: 'Add events with alarms inside a one-to-one chat. The event is posted to the conversation.' },
+  { i: UserRound, t: 'Profiles and online status', d: 'Add a nickname, age and status. Choose whether contacts see you online, offline, or automatically.' },
+  { i: Palette, t: 'Make it yours', d: 'Change text size and font, tab and navigation colours, bubble colours and shape, wallpapers, and animations.' },
+  { i: Mic, t: 'Typing, receipts and replies', d: 'Delivery and read ticks (you can switch read receipts off), live typing indicators, swipe to reply, reactions, message tags and Timeline Jump.' },
+  { i: Sparkles, t: 'Smart replies and voice typing', d: 'Quick reply suggestions, and dictation that uses your phone or browser’s speech recognition where it is available.' },
+  { i: Clock, t: 'Edit on this device', d: 'Rename contacts, change their photo or edit how a message looks on your own device. Nothing changes for the other person.' },
+  { i: Tags, t: 'Back-button safe', d: 'Pressing Back closes the open screen first, and asks before leaving the app.' },
 ]
 
 const pro = [
-  'Decoy profiles and extra privacy controls',
-  'Canvas pan and zoom, neon, metallic and watercolour brushes',
-  'Shared media player and shared calendar',
-  'Connect Four on the canvas',
-  'Encrypted, password-protected canvas keepsakes',
+  'Unlimited decoy chats (free plan shows one)',
+  'Fingerprint or face unlock: swipe up on the lock screen, off until you turn it on',
+  'Ghost Canvas pan and zoom, plus neon, metallic and watercolour brushes',
+  'Shared media player and Connect Four on the canvas',
+  'Encrypted, password-protected canvas keepsakes saved on your device',
+  'Focus scheduling that bundles notifications during set hours',
 ]
 
 export default function Landing() {
   const { canInstall, installed, install } = useInstall()
   const { release, loading: releaseLoading } = useLatestRelease()
   const apkAsset = findAsset(release, /\.apk$/i)
-  const exeAsset = findAsset(release, /\.exe$/i)
-  const dmgAsset = findAsset(release, /\.dmg$/i)
-  const appImageAsset = findAsset(release, /\.AppImage$/i)
-  const releasePage = release?.pageUrl ?? DOWNLOADS.windows
   const androidApkUrl = DOWNLOADS.androidApk // always the site's own /chatter.apk
-  void apkAsset
-  const winUrl = exeAsset?.url ?? releasePage
-  const macUrl = dmgAsset?.url ?? releasePage
-  const linuxUrl = appImageAsset?.url ?? releasePage
   const versionLabel = release?.version ? ` · ${release.version}` : ''
   const openApp = () => { window.location.hash = '#app'; window.location.reload() }
   const ua = typeof navigator !== 'undefined' ? navigator.userAgent : ''
   const platform = (() => {
-    if (/android/i.test(ua)) return { name: 'Android', native: DOWNLOADS.playStore || androidApkUrl, hint: 'Install straight from your browser in one tap. It works offline and updates itself.' }
-    if (/iphone|ipad|ipod/i.test(ua)) return { name: 'iPhone', native: '', hint: 'In Safari tap Share, then Add to Home Screen.' }
-    if (/windows/i.test(ua)) return { name: 'Windows', native: winUrl, hint: 'Install from Chrome or Edge in one click. It opens in its own window like a normal app.' }
-    if (/macintosh|mac os/i.test(ua)) return { name: 'Mac', native: macUrl, hint: 'Install from Chrome or Edge in one click, or use Safari: File, Add to Dock.' }
-    if (/linux|cros/i.test(ua)) return { name: 'Linux', native: linuxUrl, hint: 'Install from Chrome or Edge in one click.' }
-    return { name: 'your device', native: '', hint: 'Install from your browser in one tap.' }
+    if (/android/i.test(ua)) return { name: 'Android', native: DOWNLOADS.playStore || androidApkUrl, hint: 'Download the Android app (APK) and install it in a few taps. You can also install the web version from Chrome.' }
+    if (/iphone|ipad|ipod/i.test(ua)) return { name: 'iPhone', native: '', hint: 'There is no iPhone app yet. In Safari tap Share, then Add to Home Screen to use the web version.' }
+    return { name: 'your computer', native: '', hint: 'There is no desktop download. Open the web version and install it from Chrome or Edge (the install icon in the address bar).' }
   })()
 
   return (
@@ -121,7 +117,7 @@ export default function Landing() {
             Talk freely.<br /><span style={{ color: EMBER }}>Leave no trace</span> you don’t want.
           </h1>
           <p className="mt-6 max-w-xl text-lg" style={{ opacity: 0.75 }}>
-            Chatter is a fast, friendly messenger with locked chats, on-device smart replies and Ghost Canvas, a shared space that disappears when you’re done.
+            Chatter is a friendly messenger with a PIN lock and decoy chats, groups, calls and Ghost Canvas, a shared drawing space that fades away when you’re done.
           </p>
           <div className="mt-8 flex flex-wrap gap-3">
             <a href="#install" className="inline-flex items-center gap-2 rounded-full px-6 py-3 font-semibold" style={{ background: EMBER, color: '#fff' }}>
@@ -131,7 +127,7 @@ export default function Landing() {
               Try it in your browser <ArrowRight size={18} />
             </button>
           </div>
-          <p className="mt-4 text-sm" style={{ opacity: 0.55 }}>Free to use · Chatter Pro from $2.99/month</p>
+          <p className="mt-4 text-sm" style={{ opacity: 0.55 }}>Free to use · Chatter Pro is free to try during early access</p>
         </div>
 
         {/* Phone mockup */}
@@ -148,9 +144,9 @@ export default function Landing() {
             <div className="space-y-2 py-4 text-[13px]">
               <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-3 py-2" style={{ background: '#242130' }}>Dinner at 8? I’ll draw you the map 🗺️</div>
               <div className="ml-auto max-w-[80%] rounded-2xl rounded-br-sm px-3 py-2" style={{ background: '#7A2C1C' }}>Perfect. Sending it to Ghost Canvas now</div>
-              <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-3 py-2" style={{ background: '#242130' }}>It vanishes in 24h, right?</div>
+              <div className="max-w-[80%] rounded-2xl rounded-bl-sm px-3 py-2" style={{ background: '#242130' }}>It fades away in seconds, right?</div>
               <div className="flex gap-1.5 pt-1">
-                {['Yes, 24h', 'Keep it', 'Lock chat'].map((s) => (
+                {['Yes!', 'Draw more', 'Open canvas'].map((s) => (
                   <span key={s} className="rounded-full border px-2.5 py-1 text-[11px]" style={{ borderColor: '#3A3550', color: '#FF9A7A' }}>{s}</span>
                 ))}
               </div>
@@ -176,7 +172,7 @@ export default function Landing() {
       <section id="install" className="px-5 py-20" style={{ background: BONE, color: INK }}>
         <div className="mx-auto max-w-6xl">
           <h2 className="text-4xl font-extrabold tracking-tight sm:text-5xl">Install Chatter</h2>
-          <p className="mt-3 max-w-xl" style={{ opacity: 0.7 }}>Pick your device. The web version installs in one tap and works offline after the first visit.</p>
+          <p className="mt-3 max-w-xl" style={{ opacity: 0.7 }}>Android users can download the app (APK). On any other device, open the web version and install it from your browser.</p>
 
           <div className="mt-8 flex flex-col gap-4 rounded-3xl border p-6 sm:flex-row sm:items-center" style={{ borderColor: 'rgba(232,71,43,.5)', background: 'rgba(232,71,43,.07)' }}>
             <div className="flex-1">
@@ -254,9 +250,9 @@ export default function Landing() {
 
           <div className="mt-10 grid gap-4 text-sm sm:grid-cols-3">
             {[
-              { i: WifiOff, t: 'Works offline', d: 'Open Chatter without a connection after your first visit.' },
-              { i: RefreshCw, t: 'Stays up to date', d: 'You’ll see an Update prompt whenever a new version is ready.' },
-              { i: ShieldCheck, t: 'Private by design', d: 'Locks, decoy PINs and encrypted keepsakes stay on your device.' },
+              { i: WifiOff, t: 'Opens offline', d: 'The app opens without a connection, but sending and receiving messages needs the internet.' },
+              { i: RefreshCw, t: 'Updates', d: 'The web version shows an Update button. On Android, download the newest APK here and install it over the old one.' },
+              { i: ShieldCheck, t: 'Your PINs stay on your device', d: 'PINs are stored on your phone only as a one-way hash. Messages are not end-to-end encrypted.' },
             ].map(({ i: Icon, t, d }) => (
               <div key={t} className="flex gap-3">
                 <Icon size={20} style={{ color: EMBER }} className="mt-0.5 shrink-0" />
@@ -271,7 +267,7 @@ export default function Landing() {
         <div>
           <Crown size={28} style={{ color: EMBER }} />
           <h2 className="mt-3 text-4xl font-extrabold tracking-tight sm:text-5xl">Chatter Pro</h2>
-          <p className="mt-3 max-w-md" style={{ opacity: 0.75 }}>Superpowers, not just fewer ads. Try it free for 7 days.</p>
+          <p className="mt-3 max-w-md" style={{ opacity: 0.75 }}>More privacy and canvas tools. During early access you can try Pro for free and no payment is taken.</p>
           <ul className="mt-6 space-y-3">
             {pro.map((p) => (
               <li key={p} className="flex gap-3 text-sm"><Check size={18} style={{ color: EMBER }} className="shrink-0" /> {p}</li>
@@ -280,12 +276,12 @@ export default function Landing() {
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div className="rounded-3xl border p-6" style={{ borderColor: 'rgba(244,238,227,.2)' }}>
-            <div className="text-sm" style={{ opacity: 0.65 }}>Monthly</div>
+            <div className="text-sm" style={{ opacity: 0.65 }}>Planned monthly price</div>
             <div className="mt-2 text-4xl font-extrabold">$2.99</div>
             <div className="text-xs" style={{ opacity: 0.55 }}>per month</div>
           </div>
           <div className="rounded-3xl p-6" style={{ background: EMBER, color: '#fff' }}>
-            <div className="text-sm opacity-80">Yearly · save 30%</div>
+            <div className="text-sm opacity-80">Planned yearly price</div>
             <div className="mt-2 text-4xl font-extrabold">$24.99</div>
             <div className="text-xs opacity-80">about $2.08 / month</div>
           </div>
@@ -296,10 +292,12 @@ export default function Landing() {
         <h2 className="text-4xl font-extrabold tracking-tight">Questions</h2>
         <div className="mt-8 divide-y" style={{ borderColor: 'rgba(244,238,227,.15)' }}>
           {[
-            ['Is Chatter free?', 'Yes. Chatter Pro is optional and starts with a 7-day free trial.'],
-            ['Does it work offline?', 'Once installed or opened once, the app loads offline. Messages need a connection to sync when accounts are enabled.'],
-            ['How do updates work?', 'The web app shows an Update button when a new version is ready. Store versions update through Google Play; desktop installers are re-downloaded from this page.'],
-            ['Which platforms are supported?', 'Android, Windows, Mac and Linux, plus any modern browser.'],
+            ['Is Chatter free?', 'Yes. Chatter Pro is optional. While Chatter is in early access you can try Pro for free and no payment is taken. Planned prices are $2.99 a month or $24.99 a year.'],
+            ['Are my messages end-to-end encrypted?', 'No. Messages are stored in Chatter’s database and protected by account rules, so only you and the person you message can read them. Only canvas keepsakes saved with Pro are encrypted on your device with your own password.'],
+            ['How does fingerprint unlock work?', 'It is a Pro setting and it is off until you turn it on. Swipe up on the lock screen. A fingerprint or face your phone accepts opens your real chats. One your phone rejects opens your decoy chats. Android reports a cancelled prompt the same way as a wrong fingerprint, so cancelling also opens the decoy chats.'],
+            ['Does it work offline?', 'The app opens offline, but sending and receiving messages needs an internet connection.'],
+            ['How do updates work?', 'The web version shows an Update button when a new version is ready. On Android, download the newest APK from this page and install it over the old one.'],
+            ['Which devices are supported?', 'Android (APK download) and any modern browser. On a computer you can install the web version from Chrome or Edge. There is no iPhone app or desktop installer yet.'],
           ].map(([q, a]) => (
             <details key={q} className="group py-4" style={{ borderColor: 'rgba(244,238,227,.15)' }}>
               <summary className="cursor-pointer list-none text-lg font-semibold">{q}</summary>

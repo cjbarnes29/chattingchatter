@@ -1,5 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&display=swap');
 
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&family=Lora:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&family=Atkinson+Hyperlegible:wght@400;700&display=swap');
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
@@ -19,6 +21,8 @@
   --accent: 224 78 42;
   --accent-soft: 252 223 208;
   --accent-foreground: 255 255 255;
+  --tab-active: var(--accent);
+  --tab-active-fg: var(--accent-foreground);
 }
 
 .dark {
@@ -38,7 +42,7 @@
 }
 
 body {
-  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  font-family: var(--font-body, 'Bricolage Grotesque'), system-ui, sans-serif;
   background: rgb(var(--bg-app));
   color: rgb(var(--text-primary));
   -webkit-font-smoothing: antialiased;
@@ -105,3 +109,37 @@ h1, h2, h3 { font-weight: 700; letter-spacing: -0.03em; }
 .slide-down { animation: slide-down 0.25s ease-out both; }
 
 .bubble-viewed { background-color: rgb(var(--bubble-out) / 0.7); }
+
+/* ---- user appearance settings ---- */
+@layer components {
+  .bubble { border-radius: var(--bubble-r, 1rem); }
+}
+/* a custom navigation colour re-themes everything inside the bar so text stays readable */
+.nav-custom {
+  --text-primary: var(--nav-fg);
+  --text-secondary: var(--nav-fg);
+  --text-tertiary: var(--nav-fg);
+  background: rgb(var(--nav-bg)) !important;
+  color: rgb(var(--nav-fg));
+}
+.nav-custom button:hover { background-color: rgb(var(--nav-fg) / 0.14) !important; }
+.plain-chat .chat-wallpaper { background-image: none; }
+
+@keyframes msg-pop {
+  0% { opacity: 0; transform: translateY(10px) scale(0.85); }
+  100% { opacity: 1; transform: none; }
+}
+.motion-lively .msg-in { animation: msg-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+.motion-lively button { transition-duration: 0.18s; }
+.motion-lively button:active { transform: scale(0.94); }
+
+.motion-off .msg-in,
+.motion-off .slide-down,
+.motion-off .story-step,
+.motion-off .typing-dot,
+.motion-off .mood-bar,
+.motion-off .mood-pop,
+.motion-off .mood-wave,
+.motion-off .blink-eye { animation: none; }
+.motion-off .msg-in, .motion-off .slide-down, .motion-off .story-step { opacity: 1; }
+.motion-off *, .motion-off *::before, .motion-off *::after { transition-duration: 0s !important; scroll-behavior: auto !important; }

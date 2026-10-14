@@ -9,9 +9,10 @@ import { CalendarDays, Reply, MoreHorizontal, X as XIcon } from 'lucide-react'
 import { useEdits, editMessage } from '../edits'
 import { readGesturePrefs } from '../prefs'
 import { MessageSheet, PersonEditor } from './EditSheets'
-import { usePro } from '../pro'
-import { Languages, Crown, Palette } from 'lucide-react'
+import { Palette } from 'lucide-react'
 import ChatStyleSheet from './ChatStyleSheet'
+import { ProfileSheet, PhotoZoom } from './ProfileView'
+import { useAppearance } from '../appearance'
 import { useChatStyle, wallpaperStyle } from '../chatStyle'
 import {
   PrivateLock,
@@ -114,7 +115,6 @@ const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
 export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, calendar }: Props) {
-  const pro = usePro()
   const cstyle = useChatStyle()
   const [styleOpen, setStyleOpen] = useState(false)
   const edits = useEdits()
@@ -135,6 +135,9 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
   )
   const [sheetMsg, setSheetMsg] = useState<string | null>(null)
   const [personOpen, setPersonOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [zoomOpen, setZoomOpen] = useState(false)
+  const appearance = useAppearance()
   const [tagMenu, setTagMenu] = useState(false)
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const edge = useRef<{ x: number; y: number } | null>(null)
@@ -226,7 +229,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         if (Math.abs(t.clientX - s.x) > 90 && Math.abs(t.clientY - s.y) < 60) onBack()
       }}
     >
-      <header className="flex items-center gap-3 border-b border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-3 py-3 md:px-5">
+      <header className={`flex items-center gap-3 border-b border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-3 py-3 md:px-5 ${appearance.navColor ? 'nav-custom' : ''}`}>
         <div className="flex items-center gap-1 text-[rgb(var(--text-secondary))]">
           {onCall && (
             <>
@@ -277,7 +280,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
           )}
         </div>
         <div className="min-w-0 flex-1 text-right">
-          <button onClick={() => setPersonOpen(true)} aria-label="Edit contact" className="block max-w-full truncate font-semibold hover:underline">{chat.name}</button>
+          <button onClick={() => (chat.isGroup ? (onOpenGroup ? onOpenGroup() : setPersonOpen(true)) : setProfileOpen(true))} aria-label={chat.isGroup ? 'Group details' : 'View profile'} className="ml-auto block max-w-full truncate font-semibold hover:underline">{chat.name}</button>
           <div className={`flex items-center gap-2 text-xs ${typing ? 'text-[rgb(var(--accent))] font-medium' : 'text-[rgb(var(--text-secondary))]'}`}>
             {typing ? (
               <>
@@ -314,7 +317,9 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
             </div>
           )}
         </div>
-        <img src={chat.avatar} alt="" className="h-10 w-10 rounded-full object-cover" />
+        <button onClick={() => setZoomOpen(true)} aria-label={`View ${chat.name}'s photo`} className="shrink-0 rounded-full transition hover:opacity-85">
+          <img src={chat.avatar} alt="" className="h-10 w-10 rounded-full object-cover" />
+        </button>
         <button onClick={onBack} aria-label="Back" className="rounded-full p-2 hover:bg-[rgb(var(--accent-soft))] md:hidden">
           <ArrowLeft size={20} className="rotate-180" />
         </button>
@@ -420,7 +425,8 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
                     onClick={() => {
                       if (m.private && !unlocked) setShowLock(m)
                     }}
-                    className={`relative rounded-2xl px-3 py-2 text-[14.5px] leading-relaxed shadow-sm transition ${
+                    style={{ fontSize: 'calc(14.5px * var(--font-scale, 1))', color: m.fromMe ? 'rgb(var(--bubble-out-fg, var(--text-primary)))' : 'rgb(var(--bubble-in-fg, var(--text-primary)))' }}
+                    className={`bubble relative px-3 py-2 leading-relaxed shadow-sm transition ${
                       m.private && !unlocked ? 'cursor-pointer' : ''
                     } ${
                       m.fromMe
@@ -520,18 +526,6 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
           aria-label="Message"
           className="max-h-32 min-h-[44px] flex-1 resize-none rounded-2xl bg-[rgb(var(--bg-panel-soft))] px-4 py-2.5 text-[15px] outline-none ring-1 ring-transparent transition placeholder:text-[rgb(var(--text-tertiary))] focus:ring-[rgb(var(--accent))]"
         />
-        {!draft.trim() && (
-          <button
-            type="button"
-            onClick={() => (pro.isPro ? setDraft((d) => d || 'Running five minutes late, save me a seat!') : onUpgrade())}
-            aria-label={pro.isPro ? 'Translate voice note' : 'Translate voice notes (Pro)'}
-            title={pro.isPro ? 'Translate on-device' : 'Pro feature'}
-            className="relative hidden rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))] sm:block"
-          >
-            <Languages size={20} />
-            {!pro.isPro && <Crown size={10} className="absolute right-1 top-1 text-[rgb(var(--accent))]" />}
-          </button>
-        )}
         {draft.trim() ? (
           <button
             type="submit"
@@ -550,6 +544,8 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         if (!m || !raw) return null
         return <MessageSheet id={m.id} text={m.text} time={m.time} edit={edits.msgs[m.id]} tags={tagsOf(m)} gestures={{ longPress: true }} onClose={() => setSheetMsg(null)} onReply={() => setReplyTo(m.id)} />
       })()}
+      {zoomOpen && <PhotoZoom src={chat.avatar} name={chat.name} onClose={() => setZoomOpen(false)} />}
+      {profileOpen && <ProfileSheet chat={chat} onClose={() => setProfileOpen(false)} onZoom={() => setZoomOpen(true)} onEditContact={() => { setProfileOpen(false); setPersonOpen(true) }} />}
       {personOpen && <PersonEditor chatId={rawChat.id} name={chat.name} avatar={chat.avatar} edited={!!personEdit} onClose={() => setPersonOpen(false)} />}
       {calOpen && calendar && <CalendarPanel friend={chat.name.split(' ')[0]} {...calendar} onClose={() => setCalOpen(false)} />}
       {ghost && <GhostCanvas friend={chat.name.split(' ')[0]} chatId={chat.id} onSend={onSend} onExit={exitGhost} onUpgrade={onUpgrade} calendar={calendar} />}

@@ -23,6 +23,7 @@ export type Chat = {
   muted?: boolean
   unread: number
   mood?: 'playful' | 'calm' | 'excited'
+  profile?: { nickname?: string; age?: number | null; status?: string; about?: string }
   messages: Message[]
 }
 

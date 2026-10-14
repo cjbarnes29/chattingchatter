@@ -4,6 +4,7 @@ import App from './App.tsx'
 import Landing from './components/Landing.tsx'
 import UpdatePrompt from './components/UpdatePrompt.tsx'
 import './index.css'
+import './appearance'
 
 // Installed apps (PWA / Capacitor / desktop) open the messenger directly.
 // Everyone else lands on the website; "#app" opens the web messenger.

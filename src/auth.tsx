@@ -1,4 +1,4 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, appRedirectUrl } from './supabase'
 
@@ -8,7 +8,14 @@ export type User = {
   name: string
   avatar: string
   about: string
+  nickname: string
+  age: number | null
+  status: string
+  /** how contacts see you: automatic, always online, or always offline */
+  presence: 'auto' | 'online' | 'offline'
 }
+
+type ProfileRow = { name: string; avatar: string | null; about: string; nickname: string | null; age: number | null; status: string | null; presence_mode: string | null }
 
 type Result = { ok: true; needsConfirm?: boolean } | { ok: false; error: string }
 
@@ -22,7 +29,10 @@ type AuthState = {
   verifyResetCode: (email: string, code: string) => Promise<Result>
   setNewPassword: (password: string) => Promise<Result>
   changeEmail: (email: string) => Promise<Result>
-  updateProfile: (patch: Partial<Pick<User, 'name' | 'avatar' | 'about'>>) => void
+  updateProfile: (patch: Partial<Pick<User, 'name' | 'avatar' | 'about' | 'nickname' | 'age' | 'status' | 'presence'>>) => void
+  /** emails a one-time code to the signed-in user, used to confirm a password change */
+  sendPasswordCode: () => Promise<Result>
+  changePasswordWithCode: (code: string, password: string) => Promise<Result>
   uploadAvatar: (file: File) => Promise<Result>
 }
 
@@ -54,8 +64,10 @@ const friendlyError = (message: string) => {
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
-  const [profile, setProfile] = useState<{ name: string; avatar: string | null; about: string } | null>(null)
+  const [profile, setProfile] = useState<ProfileRow | null>(null)
   const [ready, setReady] = useState(false)
+  // while a password-change code is being verified, ignore Supabase's "recovery" event so the normal app stays open
+  const quiet = useRef(false)
   // A reset link carries "type=recovery" in the URL. Read it up front so the
   // "choose a new password" screen appears even if Supabase has already processed
   // the token before our listener is attached.
@@ -69,7 +81,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!data.session) setReady(true)
     })
     const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
-      if (event === 'PASSWORD_RECOVERY') setRecovering(true)
+      if (event === 'PASSWORD_RECOVERY' && !quiet.current) setRecovering(true)
       setSession(s)
       if (!s) {
         setProfile(null)
@@ -85,12 +97,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let cancelled = false
     supabase
       .from('profiles')
-      .select('name, avatar, about')
+      .select('name, avatar, about, nickname, age, status, presence_mode')
       .eq('id', uid)
       .maybeSingle()
       .then(({ data }) => {
         if (cancelled) return
-        setProfile(data ?? { name: session?.user.email?.split('@')[0] ?? 'Me', avatar: null, about: 'Hey there! I am using Chatter.' })
+        setProfile((data as ProfileRow | null) ?? { name: session?.user.email?.split('@')[0] ?? 'Me', avatar: null, about: 'Hey there! I am using Chatter.', nickname: '', age: null, status: '', presence_mode: 'auto' })
         setReady(true)
       })
     return () => {
@@ -98,6 +110,46 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid])
+
+  // "Last active" heartbeat so contacts can see when you are online (while the app is open)
+  useEffect(() => {
+    if (!uid) return
+    const beat = () => {
+      if (document.visibilityState === 'visible') supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', uid).then(() => {})
+    }
+    beat()
+    const t = window.setInterval(beat, 45000)
+    document.addEventListener('visibilitychange', beat)
+    return () => {
+      window.clearInterval(t)
+      document.removeEventListener('visibilitychange', beat)
+    }
+  }, [uid])
+
+  const sendPasswordCode: AuthState['sendPasswordCode'] = useCallback(async () => {
+    const email = session?.user.email
+    if (!email) return { ok: false, error: 'Please sign in first.' }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: appRedirectUrl() })
+    return error ? { ok: false, error: friendlyError(error.message) } : { ok: true }
+  }, [session])
+
+  const changePasswordWithCode: AuthState['changePasswordWithCode'] = useCallback(
+    async (code, password) => {
+      const email = session?.user.email
+      if (!email) return { ok: false, error: 'Please sign in first.' }
+      if (password.length < 6) return { ok: false, error: 'Password must be at least 6 characters.' }
+      quiet.current = true
+      try {
+        const v = await supabase.auth.verifyOtp({ email, token: code.trim(), type: 'recovery' })
+        if (v.error) return { ok: false, error: 'That code is wrong or expired. Check it, or tap Resend code.' }
+        const { error } = await supabase.auth.updateUser({ password })
+        return error ? { ok: false, error: error.message } : { ok: true }
+      } finally {
+        window.setTimeout(() => { quiet.current = false }, 2500)
+      }
+    },
+    [session],
+  )
 
   const signIn: AuthState['signIn'] = useCallback(async (rawEmail, password) => {
     const email = rawEmail.trim().toLowerCase()
@@ -169,8 +221,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateProfile: AuthState['updateProfile'] = useCallback(
     (patch) => {
-      setProfile((prev) => (prev ? { ...prev, ...patch } : prev))
-      if (uid) supabase.from('profiles').update(patch).eq('id', uid).then(() => {})
+      const { presence, ...rest } = patch
+      const db: Record<string, unknown> = { ...rest }
+      if (presence !== undefined) db.presence_mode = presence
+      setProfile((prev) => (prev ? { ...prev, ...rest, ...(presence !== undefined ? { presence_mode: presence } : {}) } : prev))
+      if (uid) supabase.from('profiles').update(db).eq('id', uid).then(() => {})
     },
     [uid],
   )
@@ -202,12 +257,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       name: profile.name,
       avatar: avatarFor(session.user.id, profile.avatar),
       about: profile.about,
+      nickname: profile.nickname ?? '',
+      age: profile.age ?? null,
+      status: profile.status ?? '',
+      presence: profile.presence_mode === 'online' || profile.presence_mode === 'offline' ? profile.presence_mode : 'auto',
     }
   }, [session, profile])
 
   const value = useMemo(
-    () => ({ user, signIn, signUp, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar }),
-    [user, signIn, signUp, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar],
+    () => ({ user, signIn, signUp, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode }),
+    [user, signIn, signUp, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode],
   )
 
   if (!ready) return null

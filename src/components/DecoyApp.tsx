@@ -36,6 +36,7 @@ export default function DecoyApp() {
     () =>
       items
         .filter((i) => !i.hidden)
+        .slice(0, isPro ? undefined : 1) // free plan: one decoy chat
         .map((i) => ({
           id: i.id,
           name: i.name,
@@ -48,7 +49,7 @@ export default function DecoyApp() {
           pinColor: cs.pinColors[i.id] ?? DEFAULT_PIN,
           messages: [{ id: `${i.id}-seed`, fromMe: false, text: i.text, time: i.time }, ...(threads[i.id] ?? [])],
         })),
-    [items, threads, cs.pins, cs.favs, cs.pinColors],
+    [items, threads, cs.pins, cs.favs, cs.pinColors, isPro],
   )
   const activeChat = chats.find((c) => c.id === activeId) ?? null
 
@@ -76,7 +77,7 @@ export default function DecoyApp() {
             onToggleDark={() => setDark((d) => !d)}
             onOpenSettings={() => setSettingsOpen(true)}
             onUpgrade={() => setUpgradeOpen(true)}
-            onNewChat={addDecoy}
+            onNewChat={() => (isPro || items.filter((i) => !i.hidden).length < 1 ? addDecoy() : setUpgradeOpen(true))}
             onOpenContacts={() => setContactsOpen(true)}
             showArchived={false}
             archivedCount={0}

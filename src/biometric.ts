@@ -10,6 +10,11 @@ export const biometricEnabled = () => localStorage.getItem(ON) !== '0'
 export const setBiometricEnabled = (v: boolean) => localStorage.setItem(ON, v ? '1' : '0')
 export const biometricEnrolled = () => !!localStorage.getItem(CRED)
 
+/** Pro: swipe up on the lock screen to unlock with a fingerprint or face. Off by default. */
+const UNLOCK = 'chatter.bio.unlock'
+export const bioUnlockEnabled = () => localStorage.getItem(UNLOCK) === '1'
+export const setBioUnlockEnabled = (v: boolean) => localStorage.setItem(UNLOCK, v ? '1' : '0')
+
 export async function biometricSupported(): Promise<boolean> {
   try {
     if (!window.PublicKeyCredential || !window.isSecureContext) return false
@@ -48,7 +53,7 @@ export async function enrollBiometric(userId: string, name: string): Promise<{ o
   }
 }
 
-export async function verifyBiometric(): Promise<{ ok: boolean; error?: string }> {
+export async function verifyBiometric(): Promise<{ ok: boolean; error?: string; denied?: boolean }> {
   const id = localStorage.getItem(CRED)
   if (!id) return { ok: false, error: 'not-enrolled' }
   try {
@@ -60,9 +65,10 @@ export async function verifyBiometric(): Promise<{ ok: boolean; error?: string }
         timeout: 60000,
       },
     })
-    return r ? { ok: true } : { ok: false, error: 'Verification failed.' }
+    return r ? { ok: true } : { ok: false, error: 'Verification failed.', denied: true }
   } catch (e) {
-    return { ok: false, error: explain(e) }
+    // "NotAllowedError" = the phone did not accept this fingerprint / face (or it was cancelled)
+    return { ok: false, error: explain(e), denied: (e as { name?: string })?.name === 'NotAllowedError' }
   }
 }
 

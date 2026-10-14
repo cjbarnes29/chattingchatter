@@ -9,7 +9,8 @@ const GROUPS = [
     title: 'Elite privacy & security',
     icon: Shield,
     items: [
-      { icon: EyeOff, name: 'Decoy profiles', desc: 'A fake PIN opens a harmless chat history, hiding your real threads.', live: true },
+      { icon: EyeOff, name: 'Unlimited decoy chats', desc: 'A decoy PIN opens a harmless chat history. Free shows 1 decoy chat, Pro shows as many as you like.', live: true },
+      { icon: Lock, name: 'Fingerprint & face unlock', desc: 'Swipe up on the lock screen. A fingerprint or face your phone rejects opens your decoy chats. Off until you turn it on.', live: true },
       { icon: Lock, name: 'Locked private messages', desc: 'Biometric or passcode verification for confidential chats.', live: true },
       { icon: Smartphone, name: 'Network camouflage', desc: 'Onion routing that hides your IP address from providers.', live: false },
       { icon: Ban, name: 'Screenshot blockade', desc: 'System-level block on screenshots during Ghost Thread sessions.', live: false },
@@ -30,7 +31,7 @@ const GROUPS = [
     title: 'Power-user utility',
     icon: Zap,
     items: [
-      { icon: Languages, name: 'Voice notes to text & translation', desc: 'Transcribe and translate voice notes on-device.', live: true },
+      { icon: Languages, name: 'Voice notes translation', desc: 'Translate voice notes into your language.', live: false },
       { icon: Clock, name: 'Smart focus scheduling', desc: 'Bundle notifications during work hours and meetings.', live: true },
       { icon: Zap, name: 'Stealth file sharing', desc: 'Send up to 5GB disguised as encrypted system files.', live: false },
       { icon: Calendar, name: 'Work calendar sync', desc: 'Auto-hold alerts during scheduled meetings.', live: false },

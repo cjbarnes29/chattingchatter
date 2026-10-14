@@ -2,11 +2,37 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import { avatarFor } from './auth'
 import type { Chat, Message } from './data'
+import { readPrivacyPrefs } from './prefs'
 
 type Row = { id: string; sender_id: string; recipient_id: string; body: string; created_at: string; read_at: string | null }
-type Peer = { id: string; name: string; avatar: string | null; about: string }
+type Peer = {
+  id: string
+  name: string
+  avatar: string | null
+  about: string
+  nickname?: string | null
+  age?: number | null
+  status?: string | null
+  presence_mode?: string | null
+  last_seen?: string | null
+}
+const PEER_COLS = 'id, name, avatar, about, nickname, age, status, presence_mode, last_seen'
+const LOCAL_READ = 'chatter.localread'
+const localRead = () => {
+  try { return new Set<string>(JSON.parse(localStorage.getItem(LOCAL_READ) || '[]')) } catch { return new Set<string>() }
+}
 
 export const REAL_PREFIX = 'u:'
+
+/** What contacts see: online right now, a last-seen time, or nothing — following the person's own choice. */
+function presenceOf(p: Peer): { online: boolean; label: string } {
+  if (p.presence_mode === 'online') return { online: true, label: 'online' }
+  if (p.presence_mode === 'offline') return { online: false, label: 'offline' }
+  const t = p.last_seen ? new Date(p.last_seen).getTime() : 0
+  if (!t) return { online: false, label: 'offline' }
+  if (Date.now() - t < 100000) return { online: true, label: 'online' }
+  return { online: false, label: `last seen ${fmt(p.last_seen!)}` }
+}
 
 function fmt(iso: string) {
   const d = new Date(iso)
@@ -25,8 +51,19 @@ export function useRealChats(myId: string) {
   const ensurePeers = useCallback(async (ids: string[]) => {
     const missing = ids.filter((i) => !peersRef.current[i])
     if (!missing.length) return
-    const { data } = await supabase.from('profiles').select('id, name, avatar, about').in('id', missing)
+    const { data } = await supabase.from('profiles').select(PEER_COLS).in('id', missing)
     if (data?.length) setPeers((p) => ({ ...p, ...Object.fromEntries(data.map((x) => [x.id, x as Peer])) }))
+  }, [])
+
+  // keep online / last-seen / status fresh while the app is open
+  useEffect(() => {
+    const t = window.setInterval(async () => {
+      const ids = Object.keys(peersRef.current)
+      if (!ids.length || document.visibilityState !== 'visible') return
+      const { data } = await supabase.from('profiles').select(PEER_COLS).in('id', ids)
+      if (data?.length) setPeers((p) => ({ ...p, ...Object.fromEntries(data.map((x) => [x.id, x as Peer])) }))
+    }, 30000)
+    return () => window.clearInterval(t)
   }, [])
 
   const addRow = useCallback(
@@ -46,7 +83,9 @@ export function useRealChats(myId: string) {
       .limit(1000)
       .then(async ({ data }) => {
         if (cancelled) return
-        const list = (data ?? []) as Row[]
+        const lr = localRead()
+        const at = new Date().toISOString()
+        const list = ((data ?? []) as Row[]).map((r) => (lr.has(r.id) && !r.read_at ? { ...r, read_at: at } : r))
         setRows(list)
         await ensurePeers([...new Set(list.map((r) => (r.sender_id === myId ? r.recipient_id : r.sender_id)))])
         if (!cancelled) setLoaded(true)
@@ -69,7 +108,14 @@ export function useRealChats(myId: string) {
     if (!unread.length) return
     const at = new Date().toISOString()
     setRows((prev) => prev.map((r) => (unread.some((u) => u.id === r.id) ? { ...r, read_at: at } : r)))
-    supabase.from('messages').update({ read_at: at }).in('id', unread.map((u) => u.id)).then(() => {})
+    if (readPrivacyPrefs().readReceipts) {
+      supabase.from('messages').update({ read_at: at }).in('id', unread.map((u) => u.id)).then(() => {})
+    } else {
+      // read receipts are off: remember on this device only, the sender never sees a "read" tick
+      const s = localRead()
+      unread.forEach((u) => s.add(u.id))
+      try { localStorage.setItem(LOCAL_READ, JSON.stringify([...s].slice(-800))) } catch { /* full */ }
+    }
   }, [openPeer, rows, myId])
 
   const chats: Chat[] = useMemo(() => {
@@ -88,7 +134,18 @@ export function useRealChats(myId: string) {
           status: r.sender_id === myId ? (r.read_at ? 'read' : 'delivered') : undefined,
         }))
         const unread = openPeer === id ? 0 : mine.filter((r) => r.sender_id === id && !r.read_at).length
-        return { id: REAL_PREFIX + id, name: p.name, avatar: avatarFor(id, p.avatar), online: false, lastSeen: 'Chatter user', unread, messages, _t: mine.length ? mine[mine.length - 1].created_at : '' } as Chat & { _t: string }
+        const pr = presenceOf(p)
+        return {
+          id: REAL_PREFIX + id,
+          name: p.name,
+          avatar: avatarFor(id, p.avatar),
+          online: pr.online,
+          lastSeen: pr.label,
+          profile: { nickname: p.nickname ?? '', age: p.age ?? null, status: p.status ?? '', about: p.about },
+          unread,
+          messages,
+          _t: mine.length ? mine[mine.length - 1].created_at : '',
+        } as Chat & { _t: string }
       })
       .sort((a, b) => (b as { _t: string })._t.localeCompare((a as { _t: string })._t))
   }, [rows, peers, myId, openPeer])
