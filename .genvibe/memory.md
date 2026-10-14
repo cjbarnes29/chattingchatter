@@ -1,4 +1,4 @@
-<!-- genvibe-memory covers:KiXmkUK5wNER8hrC -->
+<!-- genvibe-memory covers:MddS2iQqqRt2OzeC -->
 ## What this app is
 Chatter is a messaging app with chat lists, live conversations, privacy and engagement features, plus Ghost Canvas, an ephemeral shared drawing and play space. Chatter Pro is a paid tier for privacy, canvas and power features. It is a Vite + React installable PWA, with a Capacitor Android project and public landing site.
 
@@ -12,8 +12,7 @@ Chatter is a messaging app with chat lists, live conversations, privacy and enga
 - Settings → Sounds supports picking an audio file, preview/reset and message-sound toggle. Chat palette sheet supports per-chat sound, wallpapers and Favorites. Inbox tabs: All, Favorites, Groups and Unread. Groups have avatar badges, a New group button and pinning.
 - Android landing page has QR code, APK install guide and direct download at `/chatter.apk`; GitHub: `github.com/cjbarnes29/chattingchatter`.
 - Decoy settings use a consistent list with individual toggles; deleted chats stay deleted, Reset restores the original three. PIN lock re-prompts after returning to the app and remains enforced after Pro lapses if set.
-- `yarn sync` (optionally `yarn sync "message"`) commits and pushes to `main`; a sync attempt returned **403 permission denied**. `npx tsc --noEmit -p .` completed cleanly after the decoy-settings update.
-- Android splash: `android/app/src/main/res/drawable/launch_bg.xml`. `.github/workflows/release.yml` is APK-only, logs diagnostics, and runs on pushes to `main`; build success remains unverified.
+- Full project replaced the partial repo upload and was pushed to `main`; the “Release Chatter APK” GitHub Actions run started, but completion and APK availability are unconfirmed.
 
 ## Design
 - “Ink & Ember”: warm bone, deep ink and vermilion in light mode; midnight violet-black and ember glow in dark mode. Bricolage Grotesque; peach/cream tailed bubbles and contour-line backgrounds.
@@ -22,7 +21,7 @@ Chatter is a messaging app with chat lists, live conversations, privacy and enga
 ## Structure
 - Vite, React, Tailwind 3. Main files: `src/App.tsx`, `src/index.css`, `src/data.ts`; components in `src/components/`.
 - Pro/auth/backend: `src/pro.tsx`, `src/components/ProSettings.tsx`, `src/auth.tsx`, `src/supabase.ts`; chat/social: `src/realChats.ts`, `src/social.ts`, `src/contacts.ts`.
-- Calendar: `src/calendar.ts`, `src/components/CalendarPanel.tsx`. Other key files: `src/components/ChatWindow.tsx`, `GhostCanvas.tsx`, `FeatureSettings.tsx`, `Settings.ts`, `src/prefs.ts`.
+- Calendar: `src/calendar.ts`, `src/components/CalendarPanel.tsx`. Other key files: `src/components/ChatWindow.tsx`, `GhostCanvas.tsx`, `FeatureSettings.ts`, `Settings.ts`, `src/prefs.ts`.
 - Styling: `src/chatStyle.ts`, `src/components/ChatStyleSheet.tsx`; decoy: `src/decoyStore.ts`, `src/components/PinGate.tsx`.
 - Sync files: `scripts/sync.sh`, `.gitignore`, `package.json`; workflow: `.github/workflows/release.yml`.
 
@@ -38,10 +37,9 @@ Chatter is a messaging app with chat lists, live conversations, privacy and enga
 - Asked to make an APK of the current app.
 
 ## Open issues & next ideas
-- APK build was not available from the current environment; depends on pushing code to GitHub and the `release.yml` workflow. User says there is no Cloud option.
-- A GitHub token was pasted into chat in the latest turns. The agent proposed using it for a push to trigger the APK build, but no push or build result is recorded. Revoke/delete the exposed token; do not reuse or store it.
-- Prior token proposals differed: fresh classic token with 1-day expiration, note `chatter-once`, `repo` plus `workflow`; an earlier proposal specified 90 days and only `repo`. The user reports expected GitHub options are not present.
-- Investigate recurring build error using the full GitHub workflow log; APK build success remains unverified.
+- The APK workflow’s `android-apk` job failed. A likely cause was found: its initial check required `config.xml`, which is created later during the build. That check was removed from `.github/workflows/release.yml` locally; the web build runs cleanly. The fix has not been pushed to GitHub, and the cause is not confirmed against GitHub logs. Retry after pushing; if it fails again, inspect the red step and full logs.
+- Confirm whether the “Release Chatter APK” run completed and retrieve the APK from Releases or Actions artifacts.
+- A GitHub token was exposed in chat and used in reported push commands. Revoke/delete it; do not reuse or store it.
 - Deploy to Netlify and test `/chatter.apk`, APK artifact and landing-page flow. Rebuild older Android APKs; test password reset, `{{ .Token }}`, Site/Redirect URLs, SMTP/Brevo and email delivery.
 - Verify releases, artifacts, signing and Android setup.
 - Test Ghost Canvas with two accounts, Supabase Realtime for messages, and groups, stories and calls with backend/database policies.

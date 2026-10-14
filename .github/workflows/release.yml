@@ -25,7 +25,7 @@ jobs:
                    android/app/src/main/res/values/styles.xml android/app/src/main/res/values/strings.xml \
                    android/app/src/main/res/drawable/launch_bg.xml \
                    android/app/src/main/java/app/chatter/messenger/MainActivity.java \
-                   android/app/src/main/res/xml/config.xml android/app/src/main/res/xml/file_paths.xml \
+                   android/app/src/main/res/xml/file_paths.xml \
                    android/app/src/main/res/layout/activity_main.xml; do
             if [ ! -f "$f" ]; then echo "MISSING FILE: $f"; missing=1; fi
           done
