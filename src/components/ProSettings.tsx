@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Crown, Lock, EyeOff, Clock, Trash2, Check, Brush, Languages } from 'lucide-react'
 import { usePro } from '../pro'
-import { DECOY_CHATS } from '../decoyChats'
+import { useDecoyItems, updateDecoy } from '../decoyStore'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}`
@@ -25,6 +25,7 @@ function Section({ title, children }: { title: string; children: React.ReactNode
 
 export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
   const pro = usePro()
+  const decoyItems = useDecoyItems()
   const [pin, setPin] = useState('')
   const [decoy, setDecoy] = useState('')
   const [msg, setMsg] = useState<string | null>(null)
@@ -38,7 +39,6 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
     await pro.setRealPin(pin)
     if (decoy) {
       await pro.setDecoyPin(decoy)
-      if (pro.decoyChatIds.length === 0) pro.setDecoyChatIds(DECOY_CHATS.map((c) => c.id))
     }
     setPin(''); setDecoy(''); setPinSaved(true)
     window.setTimeout(() => setPinSaved(false), 1600)
@@ -90,13 +90,14 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
             <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
               <p className="mb-2 text-xs font-semibold">Chats shown under the decoy PIN</p>
               <ul className="space-y-1">
-                {DECOY_CHATS.map((c) => {
-                  const on = pro.decoyChatIds.includes(c.id)
+                {decoyItems.length === 0 && <li className="py-1 text-xs text-[rgb(var(--text-secondary))]">No decoy chats. Add some in Settings → Decoy profile settings.</li>}
+                {decoyItems.map((c) => {
+                  const on = !c.hidden
                   return (
                     <li key={c.id} className="flex items-center gap-3 py-1">
                       <img src={c.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
                       <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{c.name}</p><p className="truncate text-xs text-[rgb(var(--text-secondary))]">{c.text}</p></div>
-                      <Toggle on={on} label={`Show ${c.name} in decoy`} onChange={(v) => pro.setDecoyChatIds(v ? [...pro.decoyChatIds, c.id] : pro.decoyChatIds.filter((x) => x !== c.id))} />
+                      <Toggle on={on} label={`Show ${c.name} in decoy`} onChange={(v) => updateDecoy(c.id, { hidden: !v })} />
                     </li>
                   )
                 })}

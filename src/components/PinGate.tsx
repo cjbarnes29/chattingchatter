@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Delete, ShieldCheck } from 'lucide-react'
 import { usePro } from '../pro'
-import { useDecoyItems, DEFAULT_DECOY_IDS } from '../decoyStore'
+import { useDecoyItems } from '../decoyStore'
 
 /** Shown at launch for users who set a PIN. Entering the decoy PIN loads a vanilla profile. */
 export function PinGate({ onUnlock, onDecoy }: { onUnlock: () => void; onDecoy: () => void }) {
@@ -60,9 +60,8 @@ export function PinGate({ onUnlock, onDecoy }: { onUnlock: () => void; onDecoy: 
 
 /** Harmless chat list shown under the decoy PIN. Only the threads the user marked as decoy are visible. */
 export function DecoyChats({ onExit }: { onExit: () => void }) {
-  const { decoyChatIds } = usePro()
   const items = useDecoyItems()
-  const visible = items.filter((c) => !DEFAULT_DECOY_IDS.includes(c.id) || decoyChatIds.includes(c.id))
+  const visible = items.filter((c) => !c.hidden)
   return (
     <div className="flex h-screen w-full flex-col bg-[rgb(var(--bg-panel))]">
       <header className="flex items-center justify-between border-b border-[rgb(var(--border))] px-5 py-4">

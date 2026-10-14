@@ -1,7 +1,7 @@
 import { useSyncExternalStore } from 'react'
 import { DECOY_CHATS } from './decoyChats'
 
-export type DecoyItem = { id: string; name: string; avatar: string; text: string; time: string }
+export type DecoyItem = { id: string; name: string; avatar: string; text: string; time: string; hidden?: boolean }
 
 const KEY = 'chatter.decoy.items.v1'
 const defaults = (): DecoyItem[] => DECOY_CHATS.map((c, i) => ({ ...c, time: ['09:12', '18:40', '11:05'][i] ?? '12:00' }))
