@@ -1,0 +1,221 @@
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
+import type { Session } from '@supabase/supabase-js'
+import { supabase, appRedirectUrl } from './supabase'
+
+export type User = {
+  id: string
+  email: string
+  name: string
+  avatar: string
+  about: string
+}
+
+type Result = { ok: true; needsConfirm?: boolean } | { ok: false; error: string }
+
+type AuthState = {
+  user: User | null
+  signIn: (email: string, password: string) => Promise<Result>
+  signUp: (email: string, password: string, name: string) => Promise<Result>
+  logout: () => void
+  recovering: boolean
+  requestReset: (email: string) => Promise<Result>
+  verifyResetCode: (email: string, code: string) => Promise<Result>
+  setNewPassword: (password: string) => Promise<Result>
+  changeEmail: (email: string) => Promise<Result>
+  updateProfile: (patch: Partial<Pick<User, 'name' | 'avatar' | 'about'>>) => void
+  uploadAvatar: (file: File) => Promise<Result>
+}
+
+export const AVATARS = [
+  'https://images.unsplash.com/photo-1494790108377-be9c29b29330?auto=format&fit=crop&w=200&q=80',
+  'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=200&q=80',
+  'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?auto=format&fit=crop&w=200&q=80',
+  'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?auto=format&fit=crop&w=200&q=80',
+]
+
+export function avatarFor(id: string, avatar?: string | null) {
+  if (avatar) return avatar
+  let h = 0
+  for (const ch of id) h = (h * 31 + ch.charCodeAt(0)) >>> 0
+  return AVATARS[h % AVATARS.length]
+}
+
+const AuthContext = createContext<AuthState | null>(null)
+
+const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)
+
+// Supabase's built-in email sender allows only a few emails per hour per project.
+// Turn that technical error into a clear, friendly message.
+const friendlyError = (message: string) => {
+  if (/rate limit|too many|over_email_send_rate_limit|email rate/i.test(message))
+    return 'Too many emails were sent recently. Please wait about an hour and try again, or use the email you already received.'
+  return message
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null)
+  const [profile, setProfile] = useState<{ name: string; avatar: string | null; about: string } | null>(null)
+  const [ready, setReady] = useState(false)
+  // A reset link carries "type=recovery" in the URL. Read it up front so the
+  // "choose a new password" screen appears even if Supabase has already processed
+  // the token before our listener is attached.
+  const [recovering, setRecovering] = useState(() =>
+    typeof window !== 'undefined' && /type=recovery/.test(window.location.hash),
+  )
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data }) => {
+      setSession(data.session)
+      if (!data.session) setReady(true)
+    })
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
+      if (event === 'PASSWORD_RECOVERY') setRecovering(true)
+      setSession(s)
+      if (!s) {
+        setProfile(null)
+        setReady(true)
+      }
+    })
+    return () => sub.subscription.unsubscribe()
+  }, [])
+
+  const uid = session?.user.id
+  useEffect(() => {
+    if (!uid) return
+    let cancelled = false
+    supabase
+      .from('profiles')
+      .select('name, avatar, about')
+      .eq('id', uid)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (cancelled) return
+        setProfile(data ?? { name: session?.user.email?.split('@')[0] ?? 'Me', avatar: null, about: 'Hey there! I am using Chatter.' })
+        setReady(true)
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid])
+
+  const signIn: AuthState['signIn'] = useCallback(async (rawEmail, password) => {
+    const email = rawEmail.trim().toLowerCase()
+    if (!isValidEmail(email)) return { ok: false, error: 'Please enter a valid email address.' }
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      if (/confirm/i.test(error.message)) return { ok: false, error: 'Please confirm your email first — check your inbox for the link.' }
+      return { ok: false, error: error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message }
+    }
+    return { ok: true }
+  }, [])
+
+  const signUp: AuthState['signUp'] = useCallback(async (rawEmail, password, name) => {
+    const email = rawEmail.trim().toLowerCase()
+    if (!isValidEmail(email)) return { ok: false, error: 'Please enter a valid email address.' }
+    if (!name.trim()) return { ok: false, error: 'Please enter your display name.' }
+    if (password.length < 6) return { ok: false, error: 'Password must be at least 6 characters.' }
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name: name.trim() }, emailRedirectTo: appRedirectUrl() },
+    })
+    if (error) return { ok: false, error: friendlyError(error.message) }
+    if (data.user && data.user.identities && data.user.identities.length === 0)
+      return { ok: false, error: 'This email is already registered. Sign in instead.' }
+    return { ok: true, needsConfirm: !data.session }
+  }, [])
+
+  const logout = useCallback(() => {
+    supabase.auth.signOut()
+  }, [])
+
+  const requestReset: AuthState['requestReset'] = useCallback(async (rawEmail) => {
+    const email = rawEmail.trim().toLowerCase()
+    if (!isValidEmail(email)) return { ok: false, error: 'Please enter a valid email address.' }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: appRedirectUrl() })
+    return error ? { ok: false, error: friendlyError(error.message) } : { ok: true }
+  }, [])
+
+  // Step 2 of the code-based reset: check the 6-digit code. Supabase signs the user in on success.
+  const verifyResetCode: AuthState['verifyResetCode'] = useCallback(async (rawEmail, code) => {
+    const email = rawEmail.trim().toLowerCase()
+    const { error } = await supabase.auth.verifyOtp({ email, token: code.trim(), type: 'recovery' })
+    if (error) {
+      if (/expired/i.test(error.message)) return { ok: false, error: 'This code has expired. Tap “Resend code” for a new one.' }
+      if (/rate|too many|attempt/i.test(error.message)) return { ok: false, error: 'Too many tries. Please wait a few minutes and try again.' }
+      return { ok: false, error: 'That code is wrong or expired. Please check it and try again.' }
+    }
+    setRecovering(true)
+    return { ok: true }
+  }, [])
+
+  // Step 3: set the new password (the user is already signed in from the verified code).
+  const setNewPassword: AuthState['setNewPassword'] = useCallback(async (password) => {
+    if (password.length < 6) return { ok: false, error: 'Password must be at least 6 characters.' }
+    const { error } = await supabase.auth.updateUser({ password })
+    if (error) return { ok: false, error: error.message }
+    setRecovering(false)
+    if (typeof window !== 'undefined') window.history.replaceState(null, '', window.location.pathname + '#app')
+    return { ok: true }
+  }, [])
+
+  const changeEmail: AuthState['changeEmail'] = useCallback(async (rawEmail) => {
+    const email = rawEmail.trim().toLowerCase()
+    if (!isValidEmail(email)) return { ok: false, error: 'Please enter a valid email address.' }
+    const { error } = await supabase.auth.updateUser({ email }, { emailRedirectTo: appRedirectUrl() })
+    return error ? { ok: false, error: friendlyError(error.message) } : { ok: true, needsConfirm: true }
+  }, [])
+
+  const updateProfile: AuthState['updateProfile'] = useCallback(
+    (patch) => {
+      setProfile((prev) => (prev ? { ...prev, ...patch } : prev))
+      if (uid) supabase.from('profiles').update(patch).eq('id', uid).then(() => {})
+    },
+    [uid],
+  )
+
+  const uploadAvatar: AuthState['uploadAvatar'] = useCallback(
+    async (file) => {
+      if (!uid) return { ok: false, error: 'Please sign in first.' }
+      if (!file.type.startsWith('image/')) return { ok: false, error: 'Please choose an image file.' }
+      if (file.size > 5 * 1024 * 1024) return { ok: false, error: 'Please choose an image under 5 MB.' }
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase().replace(/[^a-z0-9]/g, '')
+      const path = `${uid}/avatar-${Date.now()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('avatars').upload(path, file, { upsert: true, contentType: file.type })
+      if (upErr) return { ok: false, error: `Could not upload photo: ${upErr.message}` }
+      const { data } = supabase.storage.from('avatars').getPublicUrl(path)
+      const url = data.publicUrl
+      const { error: dbErr } = await supabase.from('profiles').update({ avatar: url }).eq('id', uid)
+      if (dbErr) return { ok: false, error: `Photo uploaded but not saved: ${dbErr.message}` }
+      setProfile((prev) => (prev ? { ...prev, avatar: url } : prev))
+      return { ok: true }
+    },
+    [uid],
+  )
+
+  const user: User | null = useMemo(() => {
+    if (!session || !profile) return null
+    return {
+      id: session.user.id,
+      email: session.user.email ?? '',
+      name: profile.name,
+      avatar: avatarFor(session.user.id, profile.avatar),
+      about: profile.about,
+    }
+  }, [session, profile])
+
+  const value = useMemo(
+    () => ({ user, signIn, signUp, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar }),
+    [user, signIn, signUp, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar],
+  )
+
+  if (!ready) return null
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used inside AuthProvider')
+  return ctx
+}

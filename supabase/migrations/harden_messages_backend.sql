@@ -1,0 +1,10 @@
+create index if not exists messages_pair_created_idx on public.messages (sender_id, recipient_id, created_at desc);
+create index if not exists messages_recipient_unread_idx on public.messages (recipient_id) where read_at is null;
+alter table public.messages drop constraint if exists messages_body_len;
+alter table public.messages add constraint messages_body_len check (char_length(body) between 1 and 4000) not valid;
+alter table public.messages drop constraint if exists messages_no_self;
+alter table public.messages add constraint messages_no_self check (sender_id <> recipient_id) not valid;
+alter table public.profiles drop constraint if exists profiles_name_len;
+alter table public.profiles add constraint profiles_name_len check (char_length(name) between 1 and 40) not valid;
+alter table public.profiles drop constraint if exists profiles_about_len;
+alter table public.profiles add constraint profiles_about_len check (about is null or char_length(about) <= 139) not valid;

@@ -1,0 +1,20 @@
+[build]
+  command = "yarn build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+
+# Direct APK download from your own site: yoursite.netlify.app/chatter.apk
+# Must stay ABOVE the catch-all below. Points at the always-current APK release.
+[[redirects]]
+  from = "/chatter.apk"
+  to = "https://github.com/cjbarnes29/chattingchatter/releases/download/latest-apk/chatter.apk"
+  status = 302
+  force = true
+
+# Send every page address (e.g. /app, /settings) to the app so refreshing works.
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200

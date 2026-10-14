@@ -1,0 +1,16 @@
+{
+  "name": "Chatter",
+  "short_name": "Chatter",
+  "description": "Private messaging with Ghost Canvas, smart replies and PIN protection.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#F5EFE6",
+  "theme_color": "#F5EFE6",
+  "icons": [
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "/apple-touch-icon.png", "sizes": "180x180", "type": "image/png" }
+  ]
+}

@@ -1,0 +1,107 @@
+@import url('https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700;12..96,800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* "Ink & Ember": warm bone paper, deep ink, vermilion accent */
+:root {
+  --bg-app: 238 232 221;
+  --bg-panel: 250 247 241;
+  --bg-panel-soft: 241 235 224;
+  --bg-chat: 244 238 227;
+  --bubble-out: 255 214 192;
+  --bubble-in: 255 253 249;
+  --text-primary: 28 25 38;
+  --text-secondary: 102 94 106;
+  --text-tertiary: 140 131 138;
+  --border: 223 214 200;
+  --accent: 224 78 42;
+  --accent-soft: 252 223 208;
+  --accent-foreground: 255 255 255;
+}
+
+.dark {
+  --bg-app: 15 14 22;
+  --bg-panel: 22 20 31;
+  --bg-panel-soft: 31 28 42;
+  --bg-chat: 17 15 25;
+  --bubble-out: 122 44 28;
+  --bubble-in: 36 33 48;
+  --text-primary: 244 238 230;
+  --text-secondary: 168 160 172;
+  --text-tertiary: 128 121 138;
+  --border: 45 41 60;
+  --accent: 255 117 78;
+  --accent-soft: 62 33 30;
+  --accent-foreground: 24 12 8;
+}
+
+body {
+  font-family: 'Bricolage Grotesque', system-ui, sans-serif;
+  background: rgb(var(--bg-app));
+  color: rgb(var(--text-primary));
+  -webkit-font-smoothing: antialiased;
+  letter-spacing: -0.005em;
+}
+
+h1, h2, h3 { font-weight: 700; letter-spacing: -0.03em; }
+
+.chat-wallpaper {
+  background-color: rgb(var(--bg-chat));
+  background-image:
+    repeating-radial-gradient(circle at 90% 8%, transparent 0 26px, rgb(var(--accent) / 0.07) 26px 27px),
+    repeating-radial-gradient(circle at 5% 95%, transparent 0 34px, rgb(var(--text-primary) / 0.05) 34px 35px);
+}
+
+@keyframes msg-in {
+  from { opacity: 0; transform: translateY(6px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+.msg-in { animation: msg-in 0.22s ease-out both; }
+
+@keyframes typing-dot {
+  0%, 80%, 100% { opacity: 0.3; transform: translateY(0); }
+  40% { opacity: 1; transform: translateY(-2px); }
+}
+.typing-dot { animation: typing-dot 1.2s infinite ease-in-out; }
+.typing-dot:nth-child(2) { animation-delay: 0.15s; }
+.typing-dot:nth-child(3) { animation-delay: 0.3s; }
+
+@keyframes mood-bar {
+  0%, 100% { height: 4px; }
+  50% { height: 14px; }
+}
+.mood-bar { height: 4px; animation: mood-bar 0.9s infinite ease-in-out; }
+
+@keyframes mood-pop {
+  0%, 100% { transform: scale(0.6); opacity: 0.4; }
+  50% { transform: scale(1.25); opacity: 1; }
+}
+.mood-pop { animation: mood-pop 0.8s infinite ease-in-out; }
+
+@keyframes mood-wave {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
+}
+.mood-wave { animation: mood-wave 1.4s infinite ease-in-out; }
+
+@keyframes blink-eye {
+  0%, 92%, 100% { transform: scaleY(1); }
+  95% { transform: scaleY(0.1); }
+}
+.blink-eye { animation: blink-eye 3s infinite; transform-origin: center; }
+
+@keyframes story-step {
+  from { opacity: 0; transform: scale(0.5) rotate(-8deg); }
+  to { opacity: 1; transform: none; }
+}
+.story-step { animation: story-step 0.5s ease-out both; }
+
+@keyframes slide-down {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.slide-down { animation: slide-down 0.25s ease-out both; }
+
+.bubble-viewed { background-color: rgb(var(--bubble-out) / 0.7); }
