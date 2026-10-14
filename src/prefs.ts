@@ -21,7 +21,7 @@ export type GesturePrefs = {
 }
 export const GESTURE_DEFAULT: GesturePrefs = { swipeReply: true, swipeChat: true, doubleTap: true, longPress: true, edgeBack: true, shakeLock: false }
 
-export const GHOST_DEFAULT: GhostPrefs = { lifetime: 10, inkWidth: 4, ink: '#7CF5C0', grid: true, exitOnLeave: true, demoFriend: true, grace: 5 }
+export const GHOST_DEFAULT: GhostPrefs = { lifetime: 10, inkWidth: 4, ink: '#7CF5C0', grid: true, exitOnLeave: true, demoFriend: false, grace: 5 }
 export const CAL_DEFAULT: CalPrefs = { sound: true, defaultRemind: 15 }
 export const INK_COLORS = ['#7CF5C0', '#FF4FD8', '#7AB8FF', '#FFD95A', '#FFFFFF']
 
