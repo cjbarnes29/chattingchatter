@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { createContext, useContext, useState } from 'react'
 import { Crown, Lock, EyeOff, Clock, Trash2, Check, Brush, Languages } from 'lucide-react'
 import { usePro } from '../pro'
 import { useDecoyItems, updateDecoy } from '../decoyStore'
@@ -14,7 +14,11 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
   )
 }
 
-function Section({ title, children }: { title: string; children: React.ReactNode }) {
+const OnlyCtx = createContext<'pin' | 'pro' | undefined>(undefined)
+
+function Section({ title, id, children }: { title: string; id?: 'pin' | 'pro'; children: React.ReactNode }) {
+  const only = useContext(OnlyCtx)
+  if (id && only && only !== id) return null
   return (
     <>
       <h3 className="mt-6 px-5 pb-1 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--text-tertiary))]">{title}</h3>
@@ -23,7 +27,15 @@ function Section({ title, children }: { title: string; children: React.ReactNode
   )
 }
 
-export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
+export default function ProSettings({ onUpgrade, only }: { onUpgrade: () => void; only?: 'pin' | 'pro' }) {
+  return (
+    <OnlyCtx.Provider value={only}>
+      <ProInner onUpgrade={onUpgrade} />
+    </OnlyCtx.Provider>
+  )
+}
+
+function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const pro = usePro()
   const decoyItems = useDecoyItems()
   const [pin, setPin] = useState('')
@@ -33,13 +45,13 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
   const flash = (t: string) => { setMsg(t); window.setTimeout(() => setMsg(null), 2000) }
 
   const savePins = async () => {
-    if (!/^\d{4,6}$/.test(pin)) return flash('Real PIN must be 4–6 digits.')
+    if (!pin && !(pro.hasPins && decoy)) return flash('Enter a real PIN (4–6 digits).')
+    if (pin && !/^\d{4,6}$/.test(pin)) return flash('Real PIN must be 4–6 digits.')
     if (decoy && !/^\d{4,6}$/.test(decoy)) return flash('Decoy PIN must be 4–6 digits.')
     if (decoy && decoy === pin) return flash('Decoy PIN must differ from your real PIN.')
-    await pro.setRealPin(pin)
-    if (decoy) {
-      await pro.setDecoyPin(decoy)
-    }
+    if (decoy && !pin && (await pro.verifyPin(decoy)) === 'real') return flash('Decoy PIN must differ from your real PIN.')
+    if (pin) await pro.setRealPin(pin)
+    if (decoy) await pro.setDecoyPin(decoy)
     setPin(''); setDecoy(''); setPinSaved(true)
     window.setTimeout(() => setPinSaved(false), 1600)
   }
@@ -62,7 +74,7 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
 
   return (
     <>
-      <Section title="Chatter Pro · Active">
+      <Section title="Chatter Pro · Active" id="pro">
         <div className="flex items-center gap-3 rounded-2xl bg-[rgb(var(--accent-soft))] p-4">
           <Crown size={18} className="text-[rgb(var(--accent))]" />
           <div className="flex-1 text-sm">
@@ -73,10 +85,10 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
         </div>
       </Section>
 
-      <Section title="Decoy profiles">
+      <Section title="PIN lock & decoy profile" id="pin">
         <div className="rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Lock size={15} className="text-[rgb(var(--accent))]" /> PIN lock {pro.hasPins ? <span className="ml-auto flex items-center gap-1 text-xs text-[rgb(var(--accent))]"><Check size={12} /> Set</span> : null}</div>
-          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN at launch. Enter the decoy PIN under pressure to open a harmless chat history.</p>
+          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN at launch and before logging out. 4-digit PINs are confirmed with the check key. Enter the decoy PIN under pressure to open a harmless chat history.</p>
           <div className="grid gap-2 sm:grid-cols-2">
             <input inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={pro.hasPins ? 'New real PIN' : 'Real PIN (4–6 digits)'} aria-label="Real PIN" type="password" className="rounded-xl bg-[rgb(var(--bg-panel))] px-3.5 py-2.5 text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]" />
             <input inputMode="numeric" value={decoy} onChange={(e) => setDecoy(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Decoy PIN (optional)" aria-label="Decoy PIN" type="password" className="rounded-xl bg-[rgb(var(--bg-panel))] px-3.5 py-2.5 text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]" />
@@ -90,7 +102,7 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
             <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
               <p className="mb-2 text-xs font-semibold">Chats shown under the decoy PIN</p>
               <ul className="space-y-1">
-                {decoyItems.length === 0 && <li className="py-1 text-xs text-[rgb(var(--text-secondary))]">No decoy chats. Add some in Settings → Decoy profile settings.</li>}
+                {decoyItems.length === 0 && <li className="py-1 text-xs text-[rgb(var(--text-secondary))]">No decoy chats. Add some in Settings → Decoy chats.</li>}
                 {decoyItems.map((c) => {
                   const on = !c.hidden
                   return (
@@ -108,7 +120,7 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
         </div>
       </Section>
 
-      <Section title="Focus scheduling">
+      <Section title="Focus scheduling" id="pro">
         <div className="rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-4">
           <div className="flex items-center gap-3">
             <Clock size={16} className="text-[rgb(var(--accent))]" />
@@ -135,7 +147,7 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
         </div>
       </Section>
 
-      <Section title="Masterpieces & tools">
+      <Section title="Masterpieces & tools" id="pro">
         <div className="flex items-center gap-3 rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-4 text-sm">
           <Brush size={16} className="text-[rgb(var(--accent))]" />
           <span className="flex-1">{pro.masterpieces.length} saved masterpiece{pro.masterpieces.length === 1 ? '' : 's'}</span>
@@ -151,7 +163,7 @@ export default function ProSettings({ onUpgrade }: { onUpgrade: () => void }) {
         ))}
       </Section>
 
-      <Section title="Coming to the mobile app">
+      <Section title="Coming to the mobile app" id="pro">
         <p className="text-xs leading-relaxed text-[rgb(var(--text-secondary))]">Network camouflage, screenshot blockade and stealth file sharing need native device access, so they will arrive with the mobile app.</p>
       </Section>
     </>

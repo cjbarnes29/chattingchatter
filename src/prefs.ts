@@ -53,6 +53,11 @@ function usePref<T extends object>(key: string, fallback: T) {
   return [value, update, reset] as const
 }
 
+export const NOTIF_DEFAULT = { previews: true, quickReply: true }
+export const PRIVACY_DEFAULT = { readReceipts: true, lastSeen: true }
+export const useNotifPrefs = () => usePref('chatter.notif.prefs', NOTIF_DEFAULT)
+export const usePrivacyPrefs = () => usePref('chatter.privacy.prefs', PRIVACY_DEFAULT)
+export const readNotifPrefs = () => load('chatter.notif.prefs', NOTIF_DEFAULT)
 export const useGhostPrefs = () => usePref('chatter.ghost.prefs', GHOST_DEFAULT)
 export const useCalPrefs = () => usePref('chatter.cal.prefs', CAL_DEFAULT)
 export const useGesturePrefs = () => usePref('chatter.gesture.prefs', GESTURE_DEFAULT)

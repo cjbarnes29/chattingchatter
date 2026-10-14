@@ -8,8 +8,14 @@ import ResetPassword from './components/ResetPassword'
 import Settings from './components/Settings'
 import { AuthProvider, useAuth } from './auth'
 import { ProProvider, usePro } from './pro'
-import { PinGate, DecoyChats } from './components/PinGate'
-import { readGesturePrefs } from './prefs'
+import { PinGate } from './components/PinGate'
+import DecoyApp from './components/DecoyApp'
+import ExitDialog from './components/ExitDialog'
+import GroupCallOverlay from './components/GroupCallOverlay'
+import { useBackTrap, useBackHandler, exitApp } from './backNav'
+import { useGroupCall } from './groupCall'
+import { useTyping } from './typing'
+import { readGesturePrefs, readNotifPrefs } from './prefs'
 import Upgrade from './components/Upgrade'
 import { type Chat } from './data'
 import { useRealChats, REAL_PREFIX } from './realChats'
@@ -38,6 +44,8 @@ function Gate() {
   const { user, recovering } = useAuth()
   const { hasPins } = usePro()
   const [unlocked, setUnlocked] = useState<'none' | 'real' | 'decoy'>('none')
+  const [exitOpen, setExitOpen] = useState(false)
+  useBackTrap(() => setExitOpen(true))
 
   // Re-lock whenever the app goes to the background, so the PIN is asked again on return
   useEffect(() => {
@@ -67,14 +75,20 @@ function Gate() {
     return () => window.removeEventListener('devicemotion', onMotion)
   }, [hasPins])
 
-  if (recovering) return <ResetPassword />
-  if (!user) return <AuthScreen />
+  let body: React.ReactNode
+  if (recovering) body = <ResetPassword />
+  else if (!user) body = <AuthScreen />
   // The lock is enforced whenever a PIN exists, even if the Pro plan has lapsed
-  if (hasPins && unlocked === 'none') {
-    return <PinGate onUnlock={() => setUnlocked('real')} onDecoy={() => setUnlocked('decoy')} />
-  }
-  if (unlocked === 'decoy') return <DecoyChats onExit={() => setUnlocked('none')} />
-  return <App />
+  else if (hasPins && unlocked === 'none') body = <PinGate onUnlock={() => setUnlocked('real')} onDecoy={() => setUnlocked('decoy')} />
+  else if (unlocked === 'decoy' && hasPins) body = <DecoyApp />
+  else body = <App />
+
+  return (
+    <>
+      {body}
+      {exitOpen && <ExitDialog onStay={() => setExitOpen(false)} onExit={() => void exitApp()} />}
+    </>
+  )
 }
 
 function App() {
@@ -84,6 +98,7 @@ function App() {
   const groupApi = useGroups(user!.id)
   const storyApi = useStories(user!.id)
   const call = useCall(user!.id)
+  const gcall = useGroupCall(user!.id, user!.name, groupApi.groups)
   const evApi = useEvents(user!.id, (peerId, text) => real.send(REAL_PREFIX + peerId, text))
   const [createGroupOpen, setCreateGroupOpen] = useState(false)
   const [groupSettingsId, setGroupSettingsId] = useState<string | null>(null)
@@ -143,14 +158,17 @@ function App() {
     for (const c of [...directChats, ...groupChats]) {
       const last = c.messages[c.messages.length - 1]
       if (!last) continue
-      if (!first && seen.current[c.id] !== undefined && seen.current[c.id] !== last.id && !last.fromMe && !c.muted) playSound(c.id)
+      if (!first && seen.current[c.id] !== undefined && seen.current[c.id] !== last.id && !last.fromMe && !c.muted) {
+        playSound(c.id)
+        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews ? last.text : 'New message' })
+      }
       seen.current[c.id] = last.id
     }
   })
   const [newChatOpen, setNewChatOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [dark, setDark] = useState(false)
+  const [dark, setDark] = useState(() => localStorage.getItem('chatter.dark') === '1')
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const { isPro, focus } = usePro()
@@ -174,7 +192,11 @@ function App() {
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', dark)
+    localStorage.setItem('chatter.dark', dark ? '1' : '0')
   }, [dark])
+
+  const typingPeer = activeId && activeId.startsWith(REAL_PREFIX) ? activeId.slice(REAL_PREFIX.length) : null
+  const typingApi = useTyping(user!.id, typingPeer)
 
   const activeChat = useMemo(() => chats.find((c) => c.id === activeId) ?? null, [chats, activeId])
 
@@ -204,6 +226,12 @@ function App() {
     const peer = peerOf(activeId)
     if (!peer) return
     call.startCall(peer, media)
+  }
+  const placeGroupCall = (media: 'voice' | 'video') => {
+    if (!activeId?.startsWith(GROUP_PREFIX)) return
+    const gid = activeId.slice(GROUP_PREFIX.length)
+    void gcall.start(gid, media)
+    groupApi.sendGroupMessage(gid, media === 'video' ? 'Started a group video call. Open this chat to join.' : 'Started a group voice call. Open this chat to join.')
   }
   const activePeerId = peerOf(activeId)
   const activeChatActions =
@@ -266,6 +294,22 @@ function App() {
   const callPeerFromIncoming = call.incoming ? real.chats.find((c) => c.id === REAL_PREFIX + call.incoming!.from) : null
   const activeGroup = activeId?.startsWith(GROUP_PREFIX) ? groupApi.groups.find((g) => g.id === activeId.slice(GROUP_PREFIX.length)) ?? null : null
   const settingsGroup = groupSettingsId ? groupApi.groups.find((g) => g.id === groupSettingsId) ?? null : null
+
+  // Back button: close the top-most sheet first, then leave the chat, and only then offer to exit
+  useBackHandler(() => {
+    if (gcall.active) return true
+    if (viewStory) { setViewStory(null); return true }
+    if (composerOpen) { setComposerOpen(false); return true }
+    if (groupSettingsId) { setGroupSettingsId(null); return true }
+    if (createGroupOpen) { setCreateGroupOpen(false); return true }
+    if (newChatOpen) { setNewChatOpen(false); return true }
+    if (contactsOpen) { setContactsOpen(false); return true }
+    if (upgradeOpen) { setUpgradeOpen(false); return true }
+    if (settingsOpen) { setSettingsOpen(false); return true }
+    if (activeId) { closeChat(); return true }
+    if (showArchived) { setShowArchived(false); return true }
+    return false
+  })
 
   const dismissNotice = useCallback(() => setNotice(null), [])
   const noticeChat = notice ? chats.find((c) => c.id === notice.chatId) : null
@@ -410,6 +454,22 @@ function App() {
             onRole={(uid, role) => groupApi.setRole(settingsGroup.id, uid, role)}
           />
         )}
+        <GroupCallOverlay
+          active={gcall.active}
+          invite={gcall.invite}
+          group={gcall.active ? groupApi.groups.find((g) => g.id === gcall.active!.groupId) ?? null : null}
+          myId={user!.id}
+          streams={gcall.streams}
+          local={gcall.local}
+          muted={gcall.muted}
+          camOff={gcall.camOff}
+          error={gcall.error}
+          onAccept={() => void gcall.acceptInvite()}
+          onDecline={gcall.decline}
+          onLeave={gcall.leave}
+          onToggleMute={gcall.toggleMute}
+          onToggleCam={gcall.toggleCam}
+        />
         <CallOverlay
           state={call.state}
           media={call.media}
@@ -434,11 +494,12 @@ function App() {
             <ChatWindow
               key={activeChat.id}
               chat={activeChat}
-              typing={false}
+              typing={typingApi.typing}
+              onTyping={typingApi.notify}
               onBack={closeChat}
               onSend={sendMessage}
               onUpgrade={() => setUpgradeOpen(true)}
-              onCall={activeChat.id.startsWith(REAL_PREFIX) ? placeCall : undefined}
+              onCall={activeChat.id.startsWith(REAL_PREFIX) ? placeCall : activeChat.id.startsWith(GROUP_PREFIX) ? placeGroupCall : undefined}
               onOpenGroup={activeGroup ? () => setGroupSettingsId(activeGroup.id) : undefined}
               onPinChat={(v) => pinAny(activeChat.id, v)}
               chatActions={activeChatActions}

@@ -131,17 +131,19 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
       </header>
 
       <div className="px-4 pb-3">
-        <button
-          onClick={onUpgrade}
-          className="mb-3 flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br from-[#1C1926] via-[#2B1D26] to-[#7A2C1C] px-4 py-3 text-left text-white shadow-md transition hover:opacity-95"
-        >
-          <Crown size={18} className="shrink-0 text-[#FFB48F]" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-bold">{isPro ? 'Chatter Pro is active' : 'Upgrade to Chatter Pro'}</p>
-            <p className="truncate text-xs text-white/65">{isPro ? 'Decoy profiles, canvas toolkit & focus mode' : 'Decoy profiles, infinite canvas & more'}</p>
-          </div>
-          <span className="rounded-full bg-[#FFB48F] px-2.5 py-1 text-[10px] font-bold uppercase text-black">Pro</span>
-        </button>
+        {!isPro && (
+          <button
+            onClick={onUpgrade}
+            className="mb-3 flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br from-[#1C1926] via-[#2B1D26] to-[#7A2C1C] px-4 py-3 text-left text-white shadow-md transition hover:opacity-95"
+          >
+            <Crown size={18} className="shrink-0 text-[#FFB48F]" />
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-bold">Upgrade to Chatter Pro</p>
+              <p className="truncate text-xs text-white/65">Decoy profiles, infinite canvas & more</p>
+            </div>
+            <span className="rounded-full bg-[#FFB48F] px-2.5 py-1 text-[10px] font-bold uppercase text-black">Pro</span>
+          </button>
+        )}
         <label className="flex items-center gap-2 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3 py-2.5 ring-1 ring-transparent transition focus-within:ring-[rgb(var(--accent))]">
           <Search size={16} className="text-[rgb(var(--text-tertiary))]" />
           <input

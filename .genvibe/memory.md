@@ -1,4 +1,4 @@
-<!-- genvibe-memory covers:r9VwulQUEdh1HD6L -->
+<!-- genvibe-memory covers:fyxkfqfdCgVOWebs -->
 ## What this app is
 Chatter is a messaging app with chat lists, live conversations, privacy and engagement features, plus Ghost Canvas, an ephemeral shared drawing and play space. Chatter Pro is a paid tier for privacy, canvas and power features. It is a Vite + React installable PWA, with a Capacitor Android project and public landing site.
 
@@ -11,8 +11,7 @@ Chatter is a messaging app with chat lists, live conversations, privacy and enga
 - Pro costs $2.99 monthly or $24.99 yearly, with a 7-day trial; payments are not connected.
 - Settings → Sounds supports picking an audio file, preview/reset and message-sound toggle. Chat palette sheet supports per-chat sound, wallpapers and Favorites. Inbox tabs: All, Favorites, Groups and Unread. Groups have avatar badges, a New group button and pinning.
 - Decoy settings use a consistent list with individual toggles; deleted chats stay deleted, Reset restores the original three. PIN lock re-prompts after returning to the app and remains enforced after Pro lapses if set.
-- Clean-up update: built-in sample chats removed; “Demo friend doodles” is off by default; app version bumped to 1.1. Test messages, groups, stories, calls, events, contacts, blocks and chat settings were removed from the database; three accounts were kept. GitHub push failed with “Bad credentials”; new APK has not been built and Netlify has not been updated.
-- Previously downloaded 4.4 MB APK is at `public/chatter.apk`; `/chatter.apk` is configured to serve it directly.
+- Clean Chatter 1.1 was pushed to GitHub; build passed. An 8.8 MB APK replaced `public/chatter.apk`. Old demo chats are removed and “Demo friend doodles” is off by default. Netlify has not yet been redeployed; its APK and landing-page download/QR will update after publishing.
 
 ## Design
 - “Ink & Ember”: warm bone, deep ink and vermilion in light mode; midnight violet-black and ember glow in dark mode. Bricolage Grotesque; peach/cream tailed bubbles and contour-line backgrounds.
@@ -32,12 +31,11 @@ Chatter is a messaging app with chat lists, live conversations, privacy and enga
 - Wants Netlify landing page and “Open web app” to start the messenger.
 - Wants Pro to offer “superpowers—not just remove ads”; pricing/trial unchanged.
 - Wants future updates/download-info website, groups, configurable story visibility/reactions, usable calls and create/edit/delete settings; check issues before release.
-- Requested workflow edits with copy/paste instructions. Earlier reported recurring error; later said GitHub is fixed.
-- Asked to build the approved decoy-settings plan immediately without further questions; implementation completed.
-- Asked for a clean version without old demo chats, re-uploaded to GitHub, and updated on Netlify with a new APK.
+- Wants workflow edits with copy/paste instructions. Asked for a clean version without old demo chats, pushed to GitHub, and updated on Netlify.
+- A GitHub token was shared in chat; never reproduce or reuse it. Revoke/delete exposed tokens.
 
 ## Open issues & next ideas
-- Resolve GitHub authentication safely; do not share or reuse exposed tokens. Push clean version, build APK, update Netlify and test `/chatter.apk`, landing-page download and QR flow.
+- Redeploy the updated project to Netlify and test `/chatter.apk`, landing-page download and QR flow. Uninstall the old phone app before installing the new APK to clear old local test data.
 - Test password reset, `{{ .Token }}`, Site/Redirect URLs, SMTP/Brevo and email delivery.
 - Verify releases, artifacts, signing and Android setup.
 - Test Ghost Canvas with two accounts, Supabase Realtime for messages, and groups, stories and calls with backend/database policies.

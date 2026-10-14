@@ -29,13 +29,13 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
 
 const sel = 'rounded-lg bg-[rgb(var(--bg-panel))] px-2.5 py-1.5 text-xs font-medium ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))] outline-none'
 const fld = 'w-full rounded-lg bg-[rgb(var(--bg-panel))] px-2.5 py-1.5 text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]'
-const h3 = 'mt-6 px-5 pb-1 text-xs font-semibold uppercase tracking-wider text-[rgb(var(--text-tertiary))]'
 
-export default function FeatureSettings() {
+export type FeatureSection = 'gestures' | 'sounds' | 'decoy' | 'calendar' | 'ghost'
+
+export default function FeatureSettings({ section }: { section: FeatureSection }) {
   const [cal, setCal] = useCalPrefs()
   const [ghost, setGhost, resetGhost] = useGhostPrefs()
   const [perm, setPerm] = useState<string>(() => ('Notification' in window ? Notification.permission : 'unsupported'))
-
   const permText = perm === 'granted' ? 'On' : perm === 'denied' ? 'Blocked in browser' : perm === 'unsupported' ? 'Not supported here' : 'Off'
 
   const cs = useChatStyle()
@@ -49,25 +49,27 @@ export default function FeatureSettings() {
   const GESTURES: { key: keyof typeof gest; title: string; desc: string }[] = [
     { key: 'swipeReply', title: 'Swipe right to reply', desc: 'Drag a message to the right to reply to it' },
     { key: 'swipeChat', title: 'Swipe left on a chat', desc: 'Reveal Pin and Archive in your inbox' },
-    { key: 'doubleTap', title: 'Double-tap to react', desc: 'Double-tap a message to add or remove a ❤️' },
+    { key: 'doubleTap', title: 'Double-tap to react', desc: 'Double-tap a message to add or remove a heart' },
     { key: 'longPress', title: 'Long-press for menu', desc: 'Hold a message to edit, tag, react or delete' },
     { key: 'edgeBack', title: 'Swipe from the edge to go back', desc: 'Drag from the screen edge to leave a chat' },
     { key: 'shakeLock', title: 'Shake to lock', desc: 'Shake your phone to lock Chatter (needs a PIN)' },
   ]
+  const list = 'divide-y divide-[rgb(var(--border))] px-5'
 
-  return (
-    <>
-      <h3 className={h3}>Gestures</h3>
-      <div className="divide-y divide-[rgb(var(--border))] px-5">
+  if (section === 'gestures')
+    return (
+      <div className={list}>
         {GESTURES.map((g) => (
           <Row key={g.key} title={g.title} desc={g.desc}>
             <Toggle on={gest[g.key]} onChange={(v) => setGest({ [g.key]: v })} label={g.title} />
           </Row>
         ))}
       </div>
+    )
 
-      <h3 className={h3}>Sounds</h3>
-      <div className="divide-y divide-[rgb(var(--border))] px-5">
+  if (section === 'sounds')
+    return (
+      <div className={list}>
         <Row title="Message sounds" desc="Play a sound when a new message arrives">
           <Toggle on={cs.soundOn} onChange={setSoundOn} label="Message sounds" />
         </Row>
@@ -77,10 +79,12 @@ export default function FeatureSettings() {
           <p className="mt-2 text-[11px] text-[rgb(var(--text-secondary))]">Pick any audio file from your phone. To use a different sound for one person, open their chat and tap the palette icon.</p>
         </div>
       </div>
+    )
 
-      <h3 className={h3}>Decoy profile settings</h3>
+  if (section === 'decoy')
+    return (
       <div className="space-y-3 px-5 py-2">
-        <p className="text-xs text-[rgb(var(--text-secondary))]">These are the harmless chats shown when you enter your decoy PIN. Edit names, messages and times so it looks believable.</p>
+        <p className="text-xs text-[rgb(var(--text-secondary))]">These are the harmless chats shown when you enter your decoy PIN. Edit names, messages and times so it looks believable. Set the decoy PIN itself under Privacy &amp; security.</p>
         {decoys.map((d) => (
           <div key={d.id} className="flex items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-3">
             <label className="relative shrink-0 cursor-pointer" aria-label={`Change photo for ${d.name}`}>
@@ -100,11 +104,12 @@ export default function FeatureSettings() {
           <button onClick={addDecoy} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--accent))] px-3 py-1.5 text-xs font-semibold text-[rgb(var(--accent-foreground))]"><Plus size={13} /> Add decoy chat</button>
           <button onClick={resetDecoys} className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))] hover:underline"><RotateCcw size={12} /> Reset</button>
         </div>
-        <p className="text-[11px] text-[rgb(var(--text-secondary))]">Set the decoy PIN itself under Chatter Pro → Decoy profiles.</p>
       </div>
+    )
 
-      <h3 className={h3}>Calendar & alarms</h3>
-      <div className="divide-y divide-[rgb(var(--border))] px-5">
+  if (section === 'calendar')
+    return (
+      <div className={list}>
         <Row title="Event notifications" desc={`Status: ${permText}. Alarms also show inside the app and post a chat reminder.`}>
           {perm === 'granted' ? (
             <span className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))]"><Check size={13} /> On</span>
@@ -123,49 +128,49 @@ export default function FeatureSettings() {
             {REMIND_OPTIONS.map((o) => <option key={o.v} value={o.v}>{o.label}</option>)}
           </select>
         </Row>
-        <p className="flex items-start gap-2 py-3 text-[11px] leading-relaxed text-[rgb(var(--text-secondary))]"><CalendarDays size={13} className="mt-0.5 shrink-0" /> Open any chat and tap the calendar icon to add an event. Alarms ring while Chatter is open or running in the background.</p>
+        <p className="flex items-start gap-2 py-3 text-[11px] leading-relaxed text-[rgb(var(--text-secondary))]"><CalendarDays size={13} className="mt-0.5 shrink-0" /> Open any chat and tap the calendar icon to add an event.</p>
       </div>
+    )
 
-      <h3 className={h3}>Ghost Canvas</h3>
-      <div className="divide-y divide-[rgb(var(--border))] px-5">
-        <Row title="Fade-out time" desc="How long ink and notes last before they dissolve">
-          <select value={ghost.lifetime} onChange={(e) => setGhost({ lifetime: +e.target.value })} aria-label="Fade-out time" className={sel}>
-            {[5, 10, 20, 30, 60].map((s) => <option key={s} value={s}>{s} seconds</option>)}
-          </select>
-        </Row>
-        <Row title="Ink colour" desc="Your classic brush and notes">
-          <div className="flex gap-1.5">
-            {INK_COLORS.map((c) => (
-              <button key={c} onClick={() => setGhost({ ink: c })} aria-label={`Ink ${c}`} aria-pressed={ghost.ink === c} className={`h-6 w-6 rounded-full ring-2 ring-offset-2 ring-offset-[rgb(var(--bg-panel))] ${ghost.ink === c ? 'ring-[rgb(var(--text-primary))]' : 'ring-transparent'}`} style={{ background: c }} />
-            ))}
-          </div>
-        </Row>
-        <Row title="Brush thickness" desc={`${ghost.inkWidth}px`}>
-          <div className="flex items-center gap-2">
-            <Brush size={13} className="text-[rgb(var(--text-tertiary))]" />
-            <input type="range" min={2} max={12} value={ghost.inkWidth} onChange={(e) => setGhost({ inkWidth: +e.target.value })} aria-label="Brush thickness" className="w-28 accent-[rgb(var(--accent))]" />
-          </div>
-        </Row>
-        <Row title="Hold-to-stay time" desc="Seconds to press and hold before the canvas closes">
-          <select value={ghost.grace} onChange={(e) => setGhost({ grace: +e.target.value })} aria-label="Hold-to-stay time" className={sel}>
-            {[3, 5, 8, 12].map((s) => <option key={s} value={s}>{s} seconds</option>)}
-          </select>
-        </Row>
-        <Row title="Dotted grid" desc="Show the faint dot grid behind drawings">
-          <Toggle on={ghost.grid} onChange={(v) => setGhost({ grid: v })} label="Dotted grid" />
-        </Row>
-        <Row title="Close when I leave" desc="Wipe the canvas if you switch apps or tabs">
-          <Toggle on={ghost.exitOnLeave} onChange={(v) => setGhost({ exitOnLeave: v })} label="Close when I leave" />
-        </Row>
-        <Row title="Demo friend doodles" desc="Simulated scribbles from your friend while testing">
-          <Toggle on={ghost.demoFriend} onChange={(v) => setGhost({ demoFriend: v })} label="Demo friend doodles" />
-        </Row>
-        <div className="flex items-center gap-2 py-3">
-          <Ghost size={13} className="text-[rgb(var(--text-tertiary))]" />
-          <p className="flex-1 text-[11px] text-[rgb(var(--text-secondary))]">Changes apply the next time you open a canvas.</p>
-          <button onClick={resetGhost} className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))] hover:underline"><RotateCcw size={12} /> Reset</button>
+  return (
+    <div className={list}>
+      <Row title="Fade-out time" desc="How long ink and notes last before they dissolve">
+        <select value={ghost.lifetime} onChange={(e) => setGhost({ lifetime: +e.target.value })} aria-label="Fade-out time" className={sel}>
+          {[5, 10, 20, 30, 60].map((s) => <option key={s} value={s}>{s} seconds</option>)}
+        </select>
+      </Row>
+      <Row title="Ink colour" desc="Your classic brush and notes">
+        <div className="flex gap-1.5">
+          {INK_COLORS.map((c) => (
+            <button key={c} onClick={() => setGhost({ ink: c })} aria-label={`Ink ${c}`} aria-pressed={ghost.ink === c} className={`h-6 w-6 rounded-full ring-2 ring-offset-2 ring-offset-[rgb(var(--bg-panel))] ${ghost.ink === c ? 'ring-[rgb(var(--text-primary))]' : 'ring-transparent'}`} style={{ background: c }} />
+          ))}
         </div>
+      </Row>
+      <Row title="Brush thickness" desc={`${ghost.inkWidth}px`}>
+        <div className="flex items-center gap-2">
+          <Brush size={13} className="text-[rgb(var(--text-tertiary))]" />
+          <input type="range" min={2} max={12} value={ghost.inkWidth} onChange={(e) => setGhost({ inkWidth: +e.target.value })} aria-label="Brush thickness" className="w-28 accent-[rgb(var(--accent))]" />
+        </div>
+      </Row>
+      <Row title="Hold-to-stay time" desc="Seconds to press and hold before the canvas closes">
+        <select value={ghost.grace} onChange={(e) => setGhost({ grace: +e.target.value })} aria-label="Hold-to-stay time" className={sel}>
+          {[3, 5, 8, 12].map((s) => <option key={s} value={s}>{s} seconds</option>)}
+        </select>
+      </Row>
+      <Row title="Dotted grid" desc="Show the faint dot grid behind drawings">
+        <Toggle on={ghost.grid} onChange={(v) => setGhost({ grid: v })} label="Dotted grid" />
+      </Row>
+      <Row title="Close when I leave" desc="Wipe the canvas if you switch apps or tabs">
+        <Toggle on={ghost.exitOnLeave} onChange={(v) => setGhost({ exitOnLeave: v })} label="Close when I leave" />
+      </Row>
+      <Row title="Demo friend doodles" desc="Simulated scribbles from your friend while testing">
+        <Toggle on={ghost.demoFriend} onChange={(v) => setGhost({ demoFriend: v })} label="Demo friend doodles" />
+      </Row>
+      <div className="flex items-center gap-2 py-3">
+        <Ghost size={13} className="text-[rgb(var(--text-tertiary))]" />
+        <p className="flex-1 text-[11px] text-[rgb(var(--text-secondary))]">Open a chat and tap the ghost icon to start a canvas. Changes apply the next time you open one.</p>
+        <button onClick={resetGhost} className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))] hover:underline"><RotateCcw size={12} /> Reset</button>
       </div>
-    </>
+    </div>
   )
 }

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, Phone, Video, Search, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Lock, Unlock, Tag } from 'lucide-react'
 import type { Chat, Message } from '../data'
 import GhostCanvas from './GhostCanvas'
+import { Ghost as GhostIcon } from 'lucide-react'
 import CalendarPanel from './CalendarPanel'
 import type { CalEvent } from '../calendar'
 import { CalendarDays, Reply, MoreHorizontal, X as XIcon } from 'lucide-react'
@@ -89,6 +90,7 @@ type Props = {
   onBack: () => void
   onSend: (chatId: string, text: string) => void
   onUpgrade: () => void
+  onTyping?: () => void
   onCall?: (media: 'voice' | 'video') => void
   onOpenGroup?: () => void
   onPinChat?: (v: boolean) => void
@@ -111,7 +113,7 @@ function StatusIcon({ status }: { status?: Message['status'] }) {
 const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
-export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onCall, onOpenGroup, onPinChat, chatActions, calendar }: Props) {
+export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, calendar }: Props) {
   const pro = usePro()
   const cstyle = useChatStyle()
   const [styleOpen, setStyleOpen] = useState(false)
@@ -231,6 +233,9 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
               <button onClick={() => onCall('video')} aria-label="Video call" title="Video call" className="rounded-full p-2 hover:bg-[rgb(var(--accent-soft))]"><Video size={19} /></button>
               <button onClick={() => onCall('voice')} aria-label="Voice call" title="Voice call" className="rounded-full p-2 hover:bg-[rgb(var(--accent-soft))]"><Phone size={19} /></button>
             </>
+          )}
+          {!chat.isGroup && (
+            <button onClick={() => setGhost(true)} aria-label="Open Ghost Canvas" title="Ghost Canvas" className="rounded-full p-2 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent-soft))]"><GhostIcon size={19} /></button>
           )}
           {calendar && (
             <button onClick={() => setCalOpen(true)} aria-label="Open calendar" title="Calendar & event alarms" className="relative rounded-full p-2 hover:bg-[rgb(var(--accent-soft))]">
@@ -501,7 +506,10 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         <textarea
           rows={1}
           value={draft}
-          onChange={(e) => setDraft(e.target.value)}
+          onChange={(e) => {
+            setDraft(e.target.value)
+            if (e.target.value) onTyping?.()
+          }}
           onKeyDown={(e) => {
             if (e.key === 'Enter' && !e.shiftKey) {
               e.preventDefault()
