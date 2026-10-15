@@ -308,7 +308,10 @@ export default function Landing() {
       </section>
 
       <footer className="border-t px-5 py-8 text-center text-sm" style={{ borderColor: 'rgba(244,238,227,.12)', opacity: 0.6 }}>
-        © {new Date().getFullYear()} Chatter · Talk freely.
+        <p>© {new Date().getFullYear()} Chatter · Talk freely.</p>
+        <p className="mt-2">
+          <a href="/terms" className="underline">Terms and Conditions</a>
+        </p>
       </footer>
     </div>
   )

@@ -3,6 +3,7 @@ import { MessageCircle, Mail, User as UserIcon, Lock, Loader2, MailCheck } from 
 import { useAuth } from '../auth'
 import InstallButton from './InstallButton'
 import ResetPassword from './ResetPassword'
+import Terms from './Terms'
 
 const field =
   'flex items-center gap-2 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3.5 py-3 ring-1 ring-transparent focus-within:ring-[rgb(var(--accent))]'
@@ -19,16 +20,24 @@ export default function AuthScreen() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
+  const [agreed, setAgreed] = useState(false)
+  const [showTerms, setShowTerms] = useState(false)
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError(null)
+    if (mode === 'register' && !agreed) {
+      setError('Please tick the box to agree to the Terms and Conditions.')
+      return
+    }
     setBusy(true)
     const res = mode === 'login' ? await signIn(email, password) : await signUp(email, password, name)
     setBusy(false)
     if (!res.ok) setError(res.error)
     else if (res.needsConfirm) setConfirmSent(true)
   }
+
+  if (showTerms) return <Terms onBack={() => setShowTerms(false)} />
 
   if (forgot) {
     return (
@@ -131,6 +140,22 @@ export default function AuthScreen() {
                   Forgot password?
                 </button>
               )}
+              {mode === 'register' && (
+                <label className="flex items-start gap-3 text-sm text-[rgb(var(--text-secondary))]">
+                  <input
+                    type="checkbox"
+                    checked={agreed}
+                    onChange={(e) => setAgreed(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]"
+                  />
+                  <span>
+                    I agree to the{' '}
+                    <button type="button" onClick={() => setShowTerms(true)} className="font-semibold text-[rgb(var(--accent))] underline">
+                      Terms and Conditions
+                    </button>
+                  </span>
+                </label>
+              )}
               {error && <p role="alert" className="text-sm text-rose-500">{error}</p>}
               <button
                 type="submit"
@@ -145,7 +170,11 @@ export default function AuthScreen() {
         )}
 
         <p className="mt-8 text-center text-xs text-[rgb(var(--text-tertiary))]">
-          By continuing you agree to Chatter’s Terms and Privacy Policy.
+          By continuing you agree to Chatter’s{' '}
+          <button type="button" onClick={() => setShowTerms(true)} className="font-semibold underline">
+            Terms and Conditions
+          </button>{' '}
+          and Privacy Policy.
         </p>
       </div>
     </div>

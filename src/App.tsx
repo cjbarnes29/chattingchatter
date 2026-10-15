@@ -18,6 +18,7 @@ import { useGroupCall } from './groupCall'
 import { useTyping } from './typing'
 import { readGesturePrefs, readNotifPrefs } from './prefs'
 import Upgrade from './components/Upgrade'
+import Terms from './components/Terms'
 import { type Chat } from './data'
 import { useRealChats, REAL_PREFIX } from './realChats'
 import NewChat from './components/NewChat'
@@ -78,7 +79,9 @@ function Gate() {
   }, [hasPins])
 
   let body: React.ReactNode
-  if (recovering) body = <ResetPassword />
+  const onTermsPage = window.location.pathname.replace(/\/+$/, '') === '/terms'
+  if (onTermsPage) body = <Terms onBack={() => { window.location.href = '/' }} />
+  else if (recovering) body = <ResetPassword />
   else if (!user) body = <AuthScreen />
   // The lock is enforced whenever a PIN exists, even if the Pro plan has lapsed
   else if (hasPins && unlocked === 'none') body = <PinGate onUnlock={() => setUnlocked('real')} onDecoy={() => setUnlocked('decoy')} bioUnlock={bioUnlock} bioDecoy={!!decoyPinHash} />
