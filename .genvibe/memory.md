@@ -1,42 +1,30 @@
-<!-- genvibe-memory covers:bRRUXjk3DIGtJBe1 -->
+<!-- genvibe-memory covers:fIAigBmqEdwQ90qR -->
 ## What this app is
-Chatter is a messaging app with chat lists, live conversations, privacy and engagement features, plus Ghost Canvas, an ephemeral shared drawing and play space. Chatter Pro is a paid tier for privacy, canvas and power features. It is a Vite + React installable PWA, with a Capacitor Android project and public landing site.
+Chatter is a Vite + React + Tailwind 3 messaging app, installable as a PWA and wrapped for Android with Capacitor. It uses Supabase for accounts, profiles, chats and related features. The public site is `https://chattingchatter.netlify.app`; the GitHub repository is `cjbarnes29/chattingchatter`.
 
 ## Built so far
-- Chat lists and conversations, search, pinned chats, unread badges, delivery/read ticks, dark mode, private-message locks, decoy PIN profiles, smart replies, voice-to-text, Timeline Jump, tags, emoji engagement, gestures, editable decoy profiles, and device-only message text/time editing.
-- Supabase email/password accounts, persistent sessions, profiles, messaging, password-reset email OTP and profile-photo storage. Friend-email chats are restricted to participants; profile creation and case/space-insensitive email lookup are fixed.
-- Contacts: add by email, import registered phone contacts on Chrome for Android, favorite, block/unblock, archive/unarchive, delete chat history and “People I added.” Blocked users cannot message; archived chats have a separate list.
-- Ghost Canvas: private one-to-one rooms, real-time strokes, notes, collage stickers, cursors/presence, six ink colours, brush sizing, undo, vanish timers and fading chat notes. Tic-tac-toe and Connect Four sync between players, with computer-opponent fallback. Pro adds pan/zoom, specialty brushes, shared media player and calendar. A Ghost Canvas button was added to one-to-one chats; functionality still needs testing.
-- One-to-one calendars, group chats, configurable-duration stories, and voice/video call flows are implemented; backend/live behavior needs verification. Group calls have not been tested.
-- Settings open one page at a time. Chatter 1.3 adds Appearance controls, profile-photo zoom, profile view and bio fields, presence controls, and Pro biometric unlock.
-- Chatter 1.3 build passed, was pushed to GitHub, and its APK was saved in the website files. Biometric behavior was tested only on web, not on a phone or with two accounts. Netlify deployment status remains unclear.
-- Terms and Conditions page, links and signup agreement are proposed, not confirmed built.
+- Supabase email/password sign-up and sign-in, password reset by email code, profile photo uploads, real-time chats, groups, stories, reactions, calls, contacts, favorites, blocks, archive and pinned chats.
+- Ghost Canvas has live sharing, drawing tools, notes, games and auto-vanish.
+- PIN and decoy profiles, with biometric decoy unlock offered as a Pro setting. Free users are limited to one decoy chat.
+- Settings include account, privacy, notifications, chats, Ghost Canvas, decoys and Pro. Appearance options include fonts, text size, colours, bubbles, wallpapers and animations.
+- Chatter Pro pricing: $2.99/month or $24.99/year, with a 7-day trial. Payments are not connected.
+- APK-only GitHub release workflow; `public/chatter.apk` is served by the website at `/chatter.apk`.
+- Latest work added `src/components/Terms.tsx`, a sign-up Terms agreement, and Terms links in the landing page and app. The latest GitHub APK was copied into `public/chatter.apk` because it differed from the existing website copy.
 
 ## Design
-- “Ink & Ember”: warm bone, deep ink and vermilion in light mode; midnight violet-black and ember glow in dark mode. Bricolage Grotesque; peach/cream tailed bubbles and contour-line backgrounds.
-- Ghost Canvas: green-tinted dark theme and mint ink. Inbox controls right; conversation actions left; contact name/avatar right.
+Ink & Ember aesthetic: warm bone paper, deep ink and vermilion in light mode; midnight violet-black and ember accents in dark mode. Uses Bricolage Grotesque. Chat list is on the right on desktop. Ghost Canvas retains its own dark theme.
 
 ## Structure
-- Vite, React, Tailwind 3. Main files: `src/App.tsx`, `src/index.css`, `src/data.ts`; components in `src/components/`.
-- Pro/auth/backend: `src/pro.tsx`, `src/components/ProSettings.tsx`, `src/auth.tsx`, `src/supabase.ts`; chat/social: `src/realChats.ts`, `src/social.ts`, `src/contacts.ts`.
-- Calendar: `src/calendar.ts`, `src/components/CalendarPanel.tsx`. Other key files: `src/components/ChatWindow.tsx`, `GhostCanvas.tsx`, `FeatureSettings.ts`, `Settings.ts`, `src/prefs.ts`.
-- Styling/security and Android/release files are listed in the existing project structure; Netlify config: `netlify.toml`.
+Key areas: `src/App.tsx`; `src/auth.tsx`, `src/supabase.ts`, `src/realChats.ts`; feature modules including `src/social.ts`, `src/calendar.ts`, `src/contacts.ts`, `src/decoyStore.ts`, `src/pro.tsx`; UI in `src/components/`; Android project in `android/`; APK in `public/chatter.apk`; release workflow in `.github/workflows/release.yml`; Netlify configuration in `netlify.toml`.
 
 ## User preferences & rules
-- Wants beginner-friendly, correct step-by-step instructions in order; says they are a newbie.
-- Wants a distinct design from WhatsApp, opposite-side button placement and reduced copyright similarity.
-- Wants release work focused on direct APK downloads; no PC versions for now. Most recently: “just need the apk version i can download.”
-- Wants Netlify landing page and “Open web app” to start the messenger.
-- Wants Pro to offer “superpowers—not just remove ads”; pricing/trial unchanged.
-- Wants settings organized, group calls available, Ghost Canvas accessible by button, PIN/decoy behavior working, and an exit choice when pressing Back.
-- Wants copy/paste workflow instructions, a clean version without old demo chats, pushed to GitHub and updated on Netlify.
-- Asked to check whether the latest GitHub release APK matches the website APK, add Terms and Conditions, and reupload the site to Netlify with the latest APK.
-- Proposed Terms plan: plain-language page linked from landing-page footer, signup and Settings; signup requires ticking “I agree to the Terms.”
+- Wants an original look, not WhatsApp-like.
+- Wants a direct APK download from the website; currently prioritizes APK over PC versions.
+- Prefers step-by-step beginner instructions.
+- Asked for Terms and Conditions and a sign-up agreement.
+- GitHub tokens have been pasted into chat; treat them as exposed and do not reuse them.
 
 ## Open issues & next ideas
-- Check whether the latest GitHub release APK matches the website APK; update the website APK and redeploy to Netlify.
-- Add and link Terms and Conditions, including a required signup agreement; details and implementation status are not yet known. A plan was proposed, but no approval or implementation is recorded.
-- Test Chatter 1.3 on a phone and with two accounts, especially biometric paths, PINs, and free-tier decoy limit.
-- Verify group calls, logout PIN prompt, Back exit prompt, Ghost Canvas and Pro banner removal.
-- Test APK download/QR flow, email delivery, Supabase Realtime and policies, and other listed release checks.
-- A GitHub token was pasted in chat; its value is intentionally not retained here. Revoke or rotate it.
+- Latest Terms changes and APK replacement are not confirmed pushed to GitHub or deployed to Netlify. Latest check ran TypeScript validation; no deployment confirmation is recorded.
+- Test the reset-code email template, profile photo changes, biometrics, calls and Ghost Canvas on real devices/accounts.
+- Confirm the latest APK download works after Netlify redeploy.
