@@ -1,9 +1,9 @@
 [build]
-  command = "yarn build"
+  command = "npm run build"
   publish = "dist"
 
 [build.environment]
-  NODE_VERSION = "20"
+  NODE_VERSION = "22"
 
 # The APK is served straight from this site: yoursite.netlify.app/chatter.apk
 [[headers]]
