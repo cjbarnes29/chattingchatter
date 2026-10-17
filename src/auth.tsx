@@ -110,13 +110,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!uid) return
     let cancelled = false
     supabase
-      .from('profiles')
-      .select('name, avatar, about, nickname, age, status, presence_mode')
-      .eq('id', uid)
-      .maybeSingle()
+      .rpc('get_profiles', { p_ids: [uid] })
       .then(({ data }) => {
         if (cancelled) return
-        setProfile((data as ProfileRow | null) ?? { name: session?.user.email?.split('@')[0] ?? 'Me', avatar: null, about: 'Hey there! I am using Chatter.', nickname: '', age: null, status: '', presence_mode: 'auto' })
+        setProfile(((data as ProfileRow[] | null)?.[0]) ?? { name: session?.user.email?.split('@')[0] ?? 'Me', avatar: null, about: 'Hey there! I am using Chatter.', nickname: '', age: null, status: '', presence_mode: 'auto' })
         setReady(true)
       })
     return () => {

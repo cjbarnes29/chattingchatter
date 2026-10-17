@@ -19,18 +19,12 @@ type Peer = {
   /** 'private' hides age, nickname, status and about from other people */
   profile_visibility?: 'public' | 'private'
 }
-const PEER_COLS = 'id, name, avatar, about, nickname, age, status, presence_mode, last_seen'
-/** Profile privacy lives in its own column. If the database hasn't got it yet this quietly returns nothing (= public). */
-async function fetchVisibility(ids: string[]): Promise<Record<string, 'public' | 'private'>> {
-  try {
-    const { data, error } = await supabase.from('profiles').select('id, profile_visibility').in('id', ids)
-    if (error || !data) return {}
-    return Object.fromEntries(data.map((x) => [x.id, x.profile_visibility === 'private' ? 'private' : 'public'])) as Record<string, 'public' | 'private'>
-  } catch {
-    return {}
-  }
+/** Profiles come through get_profiles(), which leaves out a private profile's nickname, age, status and about. */
+async function fetchPeers(ids: string[]): Promise<Record<string, Peer>> {
+  const { data } = await supabase.rpc('get_profiles', { p_ids: ids })
+  const rows = (data as Peer[] | null) ?? []
+  return Object.fromEntries(rows.map((x) => [x.id, { ...x, profile_visibility: x.profile_visibility === 'private' ? 'private' : 'public' }]))
 }
-const withVisibility = (rows: Peer[], vis: Record<string, 'public' | 'private'>) => Object.fromEntries(rows.map((x) => [x.id, { ...x, profile_visibility: vis[x.id] ?? 'public' }]))
 
 const LOCAL_READ = 'chatter.localread'
 const localRead = () => {
@@ -66,11 +60,8 @@ export function useRealChats(myId: string) {
   const ensurePeers = useCallback(async (ids: string[]) => {
     const missing = ids.filter((i) => !peersRef.current[i])
     if (!missing.length) return
-    const { data } = await supabase.from('profiles').select(PEER_COLS).in('id', missing)
-    if (data?.length) {
-      const vis = await fetchVisibility(data.map((x) => x.id))
-      setPeers((p) => ({ ...p, ...withVisibility(data as Peer[], vis) }))
-    }
+    const found = await fetchPeers(missing)
+    if (Object.keys(found).length) setPeers((p) => ({ ...p, ...found }))
   }, [])
 
   // keep online / last-seen / status fresh while the app is open
@@ -78,11 +69,8 @@ export function useRealChats(myId: string) {
     const t = window.setInterval(async () => {
       const ids = Object.keys(peersRef.current)
       if (!ids.length || document.visibilityState !== 'visible') return
-      const { data } = await supabase.from('profiles').select(PEER_COLS).in('id', ids)
-      if (data?.length) {
-        const vis = await fetchVisibility(ids)
-        setPeers((p) => ({ ...p, ...withVisibility(data as Peer[], vis) }))
-      }
+      const found = await fetchPeers(ids)
+      if (Object.keys(found).length) setPeers((p) => ({ ...p, ...found }))
     }, 30000)
     return () => window.clearInterval(t)
   }, [])
