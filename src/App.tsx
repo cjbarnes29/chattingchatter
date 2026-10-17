@@ -120,6 +120,7 @@ function App() {
         text: m.senderId === user!.id ? m.body : `${sender?.name?.split(' ')[0] ?? 'Member'}: ${m.body}`,
         time: new Date(m.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false }),
         status: undefined,
+        poll: groupApi.polls[m.id],
       }
     })
     return {
@@ -506,6 +507,18 @@ function App() {
               onUpgrade={() => setUpgradeOpen(true)}
               onCall={activeChat.id.startsWith(REAL_PREFIX) ? placeCall : activeChat.id.startsWith(GROUP_PREFIX) ? placeGroupCall : undefined}
               onOpenGroup={activeGroup ? () => setGroupSettingsId(activeGroup.id) : undefined}
+              polls={
+                activeGroup
+                  ? {
+                      myId: user!.id,
+                      members: activeGroup.members,
+                      isAdmin: activeGroup.members.some((m) => m.id === user!.id && m.role === 'admin'),
+                      onCreate: (q, opts, multi) => groupApi.createPoll(activeGroup.id, q, opts, multi),
+                      onVote: groupApi.votePoll,
+                      onClose: groupApi.closePoll,
+                    }
+                  : undefined
+              }
               onPinChat={(v) => pinAny(activeChat.id, v)}
               chatActions={activeChatActions}
               calendar={calendarProps}

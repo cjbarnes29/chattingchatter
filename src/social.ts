@@ -9,6 +9,15 @@ export const STORY_EMOJIS = ['❤️', '😂', '🔥', '👏', '😮', '😢']
 export type GroupMember = { id: string; name: string; avatar: string; role: 'admin' | 'member' }
 export type Group = { id: string; name: string; color: string; createdBy: string; members: GroupMember[] }
 export type GroupMessage = { id: string; groupId: string; senderId: string; body: string; createdAt: string }
+export type Poll = { id: string; groupId: string; createdBy: string; question: string; options: string[]; multi: boolean; closed: boolean; votes: Record<string, number[]> }
+
+type PollRow = { id: string; group_id: string; created_by: string; question: string; options: string[]; multi: boolean; closed: boolean }
+const toPoll = (r: PollRow, votes: Record<string, number[]> = {}): Poll => ({ id: r.id, groupId: r.group_id, createdBy: r.created_by, question: r.question, options: r.options, multi: r.multi, closed: r.closed, votes })
+function votesByUser(rows: { user_id: string; option_idx: number }[]) {
+  const by: Record<string, number[]> = {}
+  rows.forEach((v) => (by[v.user_id] ??= []).push(v.option_idx))
+  return by
+}
 
 export type Story = {
   id: string
@@ -42,6 +51,7 @@ export function timeLeft(iso: string) {
 export function useGroups(myId: string) {
   const [groups, setGroups] = useState<Group[]>([])
   const [groupMessages, setGroupMessages] = useState<Record<string, GroupMessage[]>>({})
+  const [polls, setPolls] = useState<Record<string, Poll>>({})
   const [loaded, setLoaded] = useState(false)
 
   const loadGroups = useCallback(async () => {
@@ -76,6 +86,11 @@ export function useGroups(myId: string) {
     )
   }, [myId])
 
+  const loadPollVotes = useCallback(async (pollId: string) => {
+    const { data } = await supabase.from('group_poll_votes').select('user_id, option_idx').eq('poll_id', pollId)
+    setPolls((prev) => (prev[pollId] ? { ...prev, [pollId]: { ...prev[pollId], votes: votesByUser(data ?? []) } } : prev))
+  }, [])
+
   useEffect(() => {
     let cancelled = false
     loadGroups().then(() => !cancelled && setLoaded(true))
@@ -91,12 +106,21 @@ export function useGroups(myId: string) {
           return { ...prev, [r.group_id]: [...list, { id: r.id, groupId: r.group_id, senderId: r.sender_id, body: r.body, createdAt: r.created_at }] }
         })
       })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_polls' }, (p) => {
+        const r = p.new as PollRow
+        if (!r?.id) return
+        setPolls((prev) => ({ ...prev, [r.id]: toPoll(r, prev[r.id]?.votes) }))
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'group_poll_votes' }, (p) => {
+        const pollId = ((p.new as { poll_id?: string })?.poll_id ?? (p.old as { poll_id?: string })?.poll_id) as string | undefined
+        if (pollId) loadPollVotes(pollId)
+      })
       .subscribe()
     return () => {
       cancelled = true
       supabase.removeChannel(ch)
     }
-  }, [myId, loadGroups])
+  }, [myId, loadGroups, loadPollVotes])
 
   // load history for each group once we know the group list
   useEffect(() => {
@@ -114,6 +138,18 @@ export function useGroups(myId: string) {
           ;(by[r.group_id] ??= []).push({ id: r.id, groupId: r.group_id, senderId: r.sender_id, body: r.body, createdAt: r.created_at })
         })
         setGroupMessages((prev) => ({ ...prev, ...by }))
+      })
+    supabase
+      .from('group_polls')
+      .select('id, group_id, created_by, question, options, multi, closed')
+      .in('group_id', ids)
+      .then(async ({ data }) => {
+        const rows = (data ?? []) as PollRow[]
+        if (!rows.length) return
+        const { data: vs } = await supabase.from('group_poll_votes').select('poll_id, user_id, option_idx').in('poll_id', rows.map((r) => r.id))
+        const next: Record<string, Poll> = {}
+        rows.forEach((r) => (next[r.id] = toPoll(r, votesByUser((vs ?? []).filter((v) => v.poll_id === r.id)))))
+        setPolls((prev) => ({ ...prev, ...next }))
       })
   }, [groups])
 
@@ -141,6 +177,26 @@ export function useGroups(myId: string) {
     },
     [myId],
   )
+
+  const createPoll = useCallback(async (groupId: string, question: string, options: string[], multi: boolean) => {
+    const { error } = await supabase.rpc('create_group_poll', { p_group: groupId, p_question: question, p_options: options, p_multi: multi })
+    return error ? { ok: false as const, error: error.message } : { ok: true as const }
+  }, [])
+
+  const votePoll = useCallback(
+    async (pollId: string, options: number[]) => {
+      // optimistic: show my vote immediately, then resync from the server
+      setPolls((prev) => (prev[pollId] ? { ...prev, [pollId]: { ...prev[pollId], votes: { ...prev[pollId].votes, [myId]: options } } } : prev))
+      await supabase.rpc('vote_group_poll', { p_poll: pollId, p_options: options })
+      await loadPollVotes(pollId)
+    },
+    [myId, loadPollVotes],
+  )
+
+  const closePoll = useCallback(async (pollId: string) => {
+    const { error } = await supabase.rpc('close_group_poll', { p_poll: pollId })
+    if (!error) setPolls((prev) => (prev[pollId] ? { ...prev, [pollId]: { ...prev[pollId], closed: true } } : prev))
+  }, [])
 
   const renameGroup = useCallback(async (groupId: string, name: string, color: string) => {
     await supabase.from('groups').update({ name, color }).eq('id', groupId)
@@ -189,9 +245,13 @@ export function useGroups(myId: string) {
   return {
     groups,
     groupMessages,
+    polls,
     loaded,
     createGroup,
     sendGroupMessage,
+    createPoll,
+    votePoll,
+    closePoll,
     renameGroup,
     deleteGroup,
     leaveGroup,
