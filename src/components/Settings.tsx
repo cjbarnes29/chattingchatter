@@ -1,10 +1,11 @@
 import { useState } from 'react'
-import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, KeyRound, Palette, Hand, Ghost, EyeOff, Crown } from 'lucide-react'
+import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard } from 'lucide-react'
 import { useAuth } from '../auth'
 import { usePro } from '../pro'
 import ProSettings from './ProSettings'
 import AccountSettings from './AccountSettings'
 import AppearanceSettings from './AppearanceSettings'
+import InterfaceSettings from './InterfaceSettings'
 import FeatureSettings from './FeatureSettings'
 import { PinGate } from './PinGate'
 import { useNotifPrefs, usePrivacyPrefs } from '../prefs'
@@ -20,7 +21,7 @@ type Props = {
   decoy?: boolean
 }
 
-type Page = 'profile' | 'account' | 'appearance' | 'privacy' | 'notifications' | 'gestures' | 'ghost' | 'decoy' | 'pro'
+type Page = 'profile' | 'account' | 'appearance' | 'interface' | 'privacy' | 'notifications' | 'gestures' | 'ghost' | 'decoy' | 'pro'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -128,6 +129,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
   const MENU: { id: Page; icon: React.ReactNode; title: string; desc: string; hideInDecoy?: boolean }[] = [
     { id: 'profile', icon: <User size={16} />, title: 'Profile', desc: 'Photo, name, nickname, age and status', hideInDecoy: true },
     { id: 'account', icon: <KeyRound size={16} />, title: 'Account', desc: 'Password, email and security question', hideInDecoy: true },
+    { id: 'interface', icon: <LayoutDashboard size={16} />, title: 'Interface', desc: 'Theme, layout, navigation, dashboard and presets' },
     { id: 'appearance', icon: dark ? <Moon size={16} /> : <Sun size={16} />, title: 'Appearance', desc: 'Text, colours, chat screen and animations' },
     { id: 'privacy', icon: <ShieldCheck size={16} />, title: 'Privacy & security', desc: 'Receipts, locks, PIN and decoy PIN', hideInDecoy: true },
     { id: 'notifications', icon: <Bell size={16} />, title: 'Notifications & sounds', desc: 'Previews, quick replies, sounds, alarms' },
@@ -252,6 +254,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
             <AccountSettings />
           )}
 
+          {page === 'interface' && <InterfaceSettings onOpenAppearance={() => setPage('appearance')} onDone={() => setPage(null)} />}
           {page === 'appearance' && <AppearanceSettings dark={dark} onToggleDark={onToggleDark} />}
 
           {page === 'privacy' && (

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { MessageCircle } from 'lucide-react'
 import ChatList from './ChatList'
 import ChatWindow from './ChatWindow'
@@ -10,6 +10,7 @@ import { useAuth } from '../auth'
 import { addDecoy, sendDecoyMessage, useDecoyItems, useDecoyThreads } from '../decoyStore'
 import { useChatStyle, setLocalPin, DEFAULT_PIN } from '../chatStyle'
 import { useBackHandler } from '../backNav'
+import { useIsDark, toggleDark } from '../interface'
 import { type Chat } from '../data'
 
 /** The decoy profile: the same Chatter screens as the real app, filled with the harmless chats the user set up.
@@ -22,15 +23,11 @@ export default function DecoyApp() {
   const cs = useChatStyle()
   const [activeId, setActiveId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [dark, setDark] = useState(() => localStorage.getItem('chatter.dark') === '1')
+  const dark = useIsDark()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const [contactsOpen, setContactsOpen] = useState(false)
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-    localStorage.setItem('chatter.dark', dark ? '1' : '0')
-  }, [dark])
 
   const chats: Chat[] = useMemo(
     () =>
@@ -74,7 +71,7 @@ export default function DecoyApp() {
             onQuery={setQuery}
             onSelect={setActiveId}
             dark={dark}
-            onToggleDark={() => setDark((d) => !d)}
+            onToggleDark={toggleDark}
             onOpenSettings={() => setSettingsOpen(true)}
             onUpgrade={() => setUpgradeOpen(true)}
             onNewChat={() => (isPro || items.filter((i) => !i.hidden).length < 1 ? addDecoy() : setUpgradeOpen(true))}
@@ -86,7 +83,7 @@ export default function DecoyApp() {
             onPinChat={(id, v) => setLocalPin(id, v)}
           />
         </div>
-        <Settings decoy open={settingsOpen} onClose={() => setSettingsOpen(false)} dark={dark} onToggleDark={() => setDark((d) => !d)} onUpgrade={() => { setSettingsOpen(false); setUpgradeOpen(true) }} />
+        <Settings decoy open={settingsOpen} onClose={() => setSettingsOpen(false)} dark={dark} onToggleDark={toggleDark} onUpgrade={() => { setSettingsOpen(false); setUpgradeOpen(true) }} />
         {upgradeOpen && <Upgrade onClose={() => setUpgradeOpen(false)} />}
         {contactsOpen && (
           <ContactsPanel
