@@ -15,6 +15,28 @@ export function onLockRequest(fn: () => void) {
   return () => window.removeEventListener(LOCK_EVENT, fn)
 }
 
+const DECOY_EVENT = 'chatter:decoy'
+/** Switch straight to the decoy profile (a decoy PIN was entered somewhere other than the lock screen). */
+export function requestDecoy() {
+  opened.clear()
+  subs.forEach((f) => f())
+  window.dispatchEvent(new Event(DECOY_EVENT))
+}
+export function onDecoyRequest(fn: () => void) {
+  window.addEventListener(DECOY_EVENT, fn)
+  return () => window.removeEventListener(DECOY_EVENT, fn)
+}
+
+const UNLOCKED_EVENT = 'chatter:unlocked'
+/** The owner just created their first PIN while using the app: stay unlocked instead of locking themselves out. */
+export function markUnlocked() {
+  window.dispatchEvent(new Event(UNLOCKED_EVENT))
+}
+export function onUnlockedMark(fn: () => void) {
+  window.addEventListener(UNLOCKED_EVENT, fn)
+  return () => window.removeEventListener(UNLOCKED_EVENT, fn)
+}
+
 export const isChatOpened = (chatId: string) => opened.has(chatId)
 export function markChatOpened(chatId: string) {
   opened.add(chatId)

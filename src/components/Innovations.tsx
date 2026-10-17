@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { Fingerprint, Lock, Sparkles, Mic, Eye, Tag, X, Send, Clock } from 'lucide-react'
 import { usePro } from '../pro'
 import { biometricEnabled, biometricEnrolled, verifyBiometric } from '../biometric'
-import { fmtWait } from '../pinLock'
+import { fmtWait, validPin, PIN_MAX } from '../pinLock'
+import SecretInput from './SecretInput'
 
 /* ---------- Confidential lock ---------- */
 /** Asks for proof before showing confidential content: the fingerprint/face check if it is set up,
@@ -23,15 +24,11 @@ export function PrivateLock({ onUnlock, onCancel, title = 'Private messages lock
     setState('fail')
     setErr(r.error ?? 'Verification failed.')
   }
-  const tryPin = async (v: string) => {
-    setPin(v)
-    if (v.length < 4) return
-    if (Date.now() < lockedUntil) return setErr(`Too many wrong PINs. Try again in ${fmtWait(lockedUntil - Date.now())}.`)
-    // 6 digits check straight away; shorter PINs check on Enter
-    if (v.length < 6) return
-    await submit(v)
-  }
+  // typing only fills the box; the PIN is checked when Unlock (or Enter) is used
+  const tryPin = (v: string) => setPin(v.slice(0, PIN_MAX))
   const submit = async (v: string) => {
+    if (!validPin(v)) return
+    if (Date.now() < lockedUntil) return setErr(`Too many wrong PINs. Try again in ${fmtWait(lockedUntil - Date.now())}.`)
     const r = await verifyPin(v)
     if (r === 'real') return onUnlock()
     setPin('')
@@ -62,17 +59,17 @@ export function PrivateLock({ onUnlock, onCancel, title = 'Private messages lock
       )}
       {hasPins ? (
         <form onSubmit={(e) => { e.preventDefault(); void submit(pin) }} className="flex items-center gap-2">
-          <input
-            type="password"
-            inputMode="numeric"
+          <SecretInput
             autoFocus={!canBio}
             value={pin}
-            onChange={(e) => void tryPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            onChange={tryPin}
+            maxLength={PIN_MAX}
             placeholder={canBio ? 'Or enter your PIN' : 'Enter your PIN'}
-            aria-label="PIN"
-            className="w-44 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3 py-2 text-center text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]"
+            label="PIN"
+            wrapClassName="w-44"
+            className="w-full rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3 py-2 text-center text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]"
           />
-          <button type="submit" disabled={pin.length < 4} aria-label="Unlock" className="rounded-xl bg-[rgb(var(--accent))] p-2 text-[rgb(var(--accent-foreground))] disabled:opacity-40"><Lock size={16} /></button>
+          <button type="submit" disabled={!validPin(pin)} aria-label="Unlock" className="rounded-xl bg-[rgb(var(--accent))] p-2 text-[rgb(var(--accent-foreground))] disabled:opacity-40"><Lock size={16} /></button>
         </form>
       ) : (
         !canBio && <p className="max-w-xs text-xs text-[rgb(var(--text-secondary))]">Set a PIN in Settings → Privacy &amp; security to open this.</p>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Mail, KeyRound, ShieldQuestion } from 'lucide-react'
 import { useAuth } from '../auth'
+import SecretInput from './SecretInput'
 import { getSecurityQuestion, checkSecurityAnswer, setSecurityQuestion } from '../security'
 
 type Msg = { ok: boolean; text: string } | null
@@ -94,12 +95,12 @@ export default function AccountSettings() {
           </>
         ) : (
           <div className="space-y-2.5">
-            {question && <input type="password" value={oldA} onChange={(e) => setOldA(e.target.value)} placeholder="Current answer" autoComplete="off" className={field} />}
+            {question && <SecretInput value={oldA} onChange={setOldA} placeholder="Current answer" label="Current answer" className={field} />}
             <input value={q} onChange={(e) => setQ(e.target.value)} maxLength={90} placeholder="Your question" className={field} />
             <div className="flex flex-wrap gap-1.5">
               {SUGGESTIONS.map((s) => <button key={s} onClick={() => setQ(s)} className="rounded-full bg-[rgb(var(--bg-panel-soft))] px-2.5 py-1 text-[11px] text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">{s}</button>)}
             </div>
-            <input type="password" value={a} onChange={(e) => setA(e.target.value)} maxLength={60} placeholder="Your answer" autoComplete="off" className={field} />
+            <SecretInput value={a} onChange={setA} maxLength={60} placeholder="Your answer" label="Answer" className={field} />
             <div className="flex gap-2">
               {question && <button onClick={() => setEditQ(false)} className={btn}>Cancel</button>}
               <button onClick={saveQuestion} disabled={qBusy || q.trim().length < 4 || a.trim().length < 2 || (!!question && !oldA)} className={primary}>{qBusy ? 'Saving…' : 'Save question'}</button>
@@ -116,7 +117,7 @@ export default function AccountSettings() {
         ) : question === undefined ? null : (
           <div className="space-y-2.5">
             <p className="text-xs font-semibold text-[rgb(var(--text-secondary))]">{question}</p>
-            <input type="password" value={ans} onChange={(e) => setAns(e.target.value)} placeholder="Your answer" autoComplete="off" className={field} />
+            <SecretInput value={ans} onChange={setAns} placeholder="Your answer" label="Answer" className={field} />
             <input type="email" value={newEmail} onChange={(e) => setNewEmail(e.target.value)} placeholder="New email address" autoComplete="email" className={field} />
             <button onClick={updateEmail} disabled={emBusy || !ans || !newEmail} className={btn}>{emBusy ? 'Checking…' : 'Verify and update email'}</button>
           </div>
@@ -131,8 +132,8 @@ export default function AccountSettings() {
         ) : (
           <div className="space-y-2.5">
             <input inputMode="numeric" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 8))} placeholder="Code from your email" autoComplete="one-time-code" className={field} />
-            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password" autoComplete="new-password" className={field} />
-            <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="Confirm new password" autoComplete="new-password" className={field} />
+            <SecretInput value={pw} onChange={setPw} placeholder="New password" label="New password" autoComplete="new-password" className={field} />
+            <SecretInput value={pw2} onChange={setPw2} placeholder="Confirm new password" label="Confirm new password" autoComplete="new-password" className={field} />
             <div className="flex gap-2">
               <button onClick={sendCode} disabled={pwBusy} className={btn}>Resend code</button>
               <button onClick={updatePassword} disabled={pwBusy || code.length < 6 || !pw} className={primary}>{pwBusy ? 'Updating…' : 'Update password'}</button>

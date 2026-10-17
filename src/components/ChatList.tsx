@@ -29,6 +29,8 @@ type Props = {
   stories?: React.ReactNode
   onNewGroup?: () => void
   onPinChat?: (id: string, v: boolean) => void
+  /** replaces your own photo in the header (the decoy profile never shows the real one) */
+  selfAvatar?: string
   onArchiveChat?: (id: string, v: boolean) => void
   /** optional home dashboard, shown as a "Home" tab on small screens */
   dashboard?: React.ReactNode
@@ -86,7 +88,7 @@ function SwipeRow({ chat, enabled, archived, onPin, onArchive, children }: { cha
   )
 }
 
-export default function ChatList({ chats: rawChats, activeId, query, onQuery, onSelect, dark, onToggleDark, onOpenSettings, onUpgrade, onNewChat, onOpenContacts, showArchived, archivedCount, onToggleArchived, isPro, stories, onNewGroup, onPinChat, onArchiveChat, dashboard }: Props) {
+export default function ChatList({ chats: rawChats, activeId, query, onQuery, onSelect, dark, onToggleDark, onOpenSettings, onUpgrade, onNewChat, onOpenContacts, showArchived, archivedCount, onToggleArchived, isPro, stories, onNewGroup, onPinChat, onArchiveChat, dashboard, selfAvatar }: Props) {
   const { user } = useAuth()
   const ap = useAppearance()
   const ui = useInterface()
@@ -165,7 +167,7 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
         <nav aria-label="Inbox shortcuts" className="flex shrink-0 items-center gap-0.5">
           {ui.shortcuts.map(shortcut)}
           <button onClick={onOpenSettings} aria-label="Open settings" title="Settings" className="rounded-full transition hover:opacity-80">
-            <img src={user?.avatar} alt="Your profile" className="ml-1 h-10 w-10 rounded-full object-cover ring-2 ring-[rgb(var(--accent-soft))]" />
+            <img src={selfAvatar ?? user?.avatar} alt="Your profile" className="ml-1 h-10 w-10 rounded-full object-cover ring-2 ring-[rgb(var(--accent-soft))]" />
           </button>
         </nav>
       </header>

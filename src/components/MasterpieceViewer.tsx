@@ -1,3 +1,4 @@
+import SecretInput from './SecretInput'
 import { useEffect, useRef, useState } from 'react'
 import { X, Lock, Loader2 } from 'lucide-react'
 import { usePro, type Masterpiece } from '../pro'
@@ -79,7 +80,7 @@ export default function MasterpieceViewer({ m, onClose }: { m: Masterpiece; onCl
         ) : (
           <form onSubmit={open} className="flex flex-1 flex-col items-center justify-center gap-3 p-6">
             <p className="text-sm text-white/70">Enter the password you used when saving.</p>
-            <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} autoFocus aria-label="Masterpiece password" className="w-64 rounded-full bg-white/10 px-4 py-2 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
+            <SecretInput value={pw} onChange={setPw} autoFocus label="Masterpiece password" wrapClassName="w-64" className="rounded-full bg-white/10 px-4 py-2 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
             <button type="submit" disabled={!pw || busy} className="flex items-center gap-2 rounded-full bg-[#7CF5C0] px-5 py-2 text-sm font-bold text-black disabled:opacity-50">
               {busy && <Loader2 size={14} className="animate-spin" />} Open
             </button>

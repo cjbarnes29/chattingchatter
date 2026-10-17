@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, useSyncExternalStore } from 'react'
 
 export type GhostPrefs = {
   lifetime: number // seconds before ink/notes dissolve
@@ -65,3 +65,18 @@ export const useGesturePrefs = () => usePref('chatter.gesture.prefs', GESTURE_DE
 export const readGesturePrefs = () => load('chatter.gesture.prefs', GESTURE_DEFAULT)
 export const readGhostPrefs = () => load('chatter.ghost.prefs', GHOST_DEFAULT)
 export const readCalPrefs = () => load('chatter.cal.prefs', CAL_DEFAULT)
+
+/** Decoy profile only: show every message with its real time, ignoring hand-edited times.
+ *  A shared store, so the Settings switch and open chats always agree. */
+export const DECOY_PREFS_DEFAULT = { realTimeOnly: false }
+const DECOY_KEY = 'chatter.decoy.prefs'
+let decoyPrefs = load(DECOY_KEY, DECOY_PREFS_DEFAULT)
+const decoySubs = new Set<() => void>()
+export const readDecoyPrefs = () => decoyPrefs
+export function setDecoyPrefs(patch: Partial<typeof DECOY_PREFS_DEFAULT>) {
+  decoyPrefs = { ...decoyPrefs, ...patch }
+  try { localStorage.setItem(DECOY_KEY, JSON.stringify(decoyPrefs)) } catch { /* storage full */ }
+  decoySubs.forEach((f) => f())
+}
+export const useDecoyPrefs = () =>
+  useSyncExternalStore((cb) => { decoySubs.add(cb); return () => { decoySubs.delete(cb) } }, readDecoyPrefs)

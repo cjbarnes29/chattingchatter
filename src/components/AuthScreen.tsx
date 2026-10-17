@@ -4,6 +4,7 @@ import { useAuth } from '../auth'
 import InstallButton from './InstallButton'
 import ResetPassword from './ResetPassword'
 import Terms from './Terms'
+import SecretInput from './SecretInput'
 
 const field =
   'flex items-center gap-2 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3.5 py-3 ring-1 ring-transparent focus-within:ring-[rgb(var(--accent))]'
@@ -35,6 +36,7 @@ export default function AuthScreen() {
   const [email, setEmail] = useState(readPending)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
+  const [password2, setPassword2] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmSent, setConfirmSent] = useState(() => !!readPending())
@@ -48,6 +50,10 @@ export default function AuthScreen() {
     setError(null)
     if (mode === 'register' && !agreed) {
       setError('Please tick the box to agree to the Terms and Conditions.')
+      return
+    }
+    if (mode === 'register' && password !== password2) {
+      setError('The two passwords do not match.')
       return
     }
     setBusy(true)
@@ -162,6 +168,7 @@ export default function AuthScreen() {
                   setConfirmSent(false)
                   setMode('login')
                   setPassword('')
+                  setPassword2('')
                   setCode('')
                   setError(null)
                   setNotice(null)
@@ -214,17 +221,27 @@ export default function AuthScreen() {
                 <span className={label}>Password</span>
                 <span className={field}>
                   <Lock size={16} className="text-[rgb(var(--text-tertiary))]" />
-                  <input
-                    type="password"
+                  <SecretInput
                     value={password}
-                    onChange={(e) => setPassword(e.target.value)}
+                    onChange={setPassword}
                     placeholder="At least 6 characters"
+                    label="Password"
                     className={input}
+                    wrapClassName="flex-1"
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                     required
                   />
                 </span>
               </label>
+              {mode === 'register' && (
+                <label className="block">
+                  <span className={label}>Confirm password</span>
+                  <span className={field}>
+                    <Lock size={16} className="text-[rgb(var(--text-tertiary))]" />
+                    <SecretInput value={password2} onChange={setPassword2} placeholder="Type it again" label="Confirm password" className={input} wrapClassName="flex-1" autoComplete="new-password" required />
+                  </span>
+                </label>
+              )}
               {mode === 'login' && (
                 <button type="button" onClick={() => { setForgot(true); setError(null) }} className="text-sm font-semibold text-[rgb(var(--accent))]">
                   Forgot password?

@@ -30,9 +30,11 @@ type MsgProps = {
   gestures: { longPress: boolean }
   onClose: () => void
   onReply: () => void
+  /** the decoy profile can pin times to the real time, which switches editing off */
+  noTimeEdit?: boolean
 }
 
-export function MessageSheet({ id, text, time, edit, tags, onClose, onReply }: MsgProps) {
+export function MessageSheet({ id, text, time, edit, tags, onClose, onReply, noTimeEdit = false }: MsgProps) {
   const [mode, setMode] = useState<'menu' | 'text' | 'time' | 'tags'>('menu')
   const [t, setT] = useState(text)
   const [tm, setTm] = useState(/^\d{2}:\d{2}$/.test(time) ? time : '12:00')
@@ -50,7 +52,7 @@ export function MessageSheet({ id, text, time, edit, tags, onClose, onReply }: M
           <button className={item} onClick={() => { onReply(); onClose() }}><Reply size={17} /> Reply</button>
           <button className={item} onClick={() => setMode('tags')}><Tag size={17} /> Tags{tags.length ? ` (${tags.length})` : ''}</button>
           <button className={item} onClick={() => setMode('text')}><Pencil size={17} /> Edit message</button>
-          <button className={item} onClick={() => setMode('time')}><Clock size={17} /> Edit time</button>
+          {!noTimeEdit && <button className={item} onClick={() => setMode('time')}><Clock size={17} /> Edit time</button>}
           <button className={item} onClick={() => { navigator.clipboard?.writeText(edit?.text ?? text); onClose() }}><Copy size={17} /> Copy</button>
           {edit && (edit.text || edit.time) && (
             <button className={item} onClick={() => { editMessage(id, { text: undefined, time: undefined }); onClose() }}><RotateCcw size={17} /> Restore original</button>
