@@ -10,3 +10,6 @@ android/app/build
 android/local.properties
 downloads
 .DS_Store
+
+# Downloaded APK builds (published as GitHub releases, not stored in git)
+apk/
