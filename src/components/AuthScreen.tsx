@@ -10,16 +10,34 @@ const field =
 const label = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--text-tertiary))]'
 const input = 'w-full bg-transparent text-sm outline-none placeholder:text-[rgb(var(--text-tertiary))]'
 
+// Remember an unfinished sign-up so the code screen comes back if the app is closed or reloaded.
+const PENDING_KEY = 'chatter.pendingConfirm'
+const readPending = () => {
+  try {
+    return localStorage.getItem(PENDING_KEY) ?? ''
+  } catch {
+    return ''
+  }
+}
+const writePending = (email: string | null) => {
+  try {
+    if (email) localStorage.setItem(PENDING_KEY, email)
+    else localStorage.removeItem(PENDING_KEY)
+  } catch {
+    /* storage unavailable: the screen still works, it just won't survive a restart */
+  }
+}
+
 export default function AuthScreen() {
   const { signIn, signUp, verifySignupCode, resendSignupCode } = useAuth()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [forgot, setForgot] = useState(false)
-  const [email, setEmail] = useState('')
+  const [email, setEmail] = useState(readPending)
   const [name, setName] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
-  const [confirmSent, setConfirmSent] = useState(false)
+  const [confirmSent, setConfirmSent] = useState(() => !!readPending())
   const [code, setCode] = useState('')
   const [notice, setNotice] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
@@ -39,11 +57,16 @@ export default function AuthScreen() {
       setError(res.error)
       // signing in to an unconfirmed account: jump straight to the code screen
       if (res.unconfirmed) {
+        writePending(email.trim().toLowerCase())
         setConfirmSent(true)
         setError(null)
         setNotice('Enter the code from your sign-up email, or tap “Resend code” for a new one.')
       }
-    } else if (res.needsConfirm) setConfirmSent(true)
+    } else if (res.needsConfirm) {
+      writePending(email.trim().toLowerCase())
+      setConfirmSent(true)
+      if (res.existing) setNotice('This email already has an account. If it isn’t confirmed yet, enter the new code we just sent. Already confirmed? Go back and sign in.')
+    }
   }
 
   const verify = async (e: React.FormEvent) => {
@@ -55,6 +78,7 @@ export default function AuthScreen() {
     const res = await verifySignupCode(email, code)
     setBusy(false)
     if (!res.ok) setError(res.error)
+    else writePending(null)
   }
 
   const resend = async () => {
@@ -134,6 +158,7 @@ export default function AuthScreen() {
               <button
                 type="button"
                 onClick={() => {
+                  writePending(null)
                   setConfirmSent(false)
                   setMode('login')
                   setPassword('')
