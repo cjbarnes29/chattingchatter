@@ -8,7 +8,7 @@ export type InboxLayout = 'list' | 'grid'
 export type PreviewLines = 0 | 1 | 2
 export type SortOrder = 'recent' | 'unread' | 'name'
 export type TabId = 'all' | 'fav' | 'groups' | 'unread'
-export type ShortcutId = 'theme' | 'contacts' | 'newChat' | 'newGroup' | 'archived'
+export type ShortcutId = 'theme' | 'contacts' | 'newChat' | 'newGroup' | 'archived' | 'lock'
 export type SectionId = 'search' | 'stories' | 'pinned' | 'proBanner' | 'archived'
 export type WidgetId = 'recent' | 'pinned' | 'groups' | 'reminders' | 'stories' | 'activity'
 export type PresetId = 'default' | 'minimal' | 'social' | 'messaging' | 'productivity' | 'compact'
@@ -48,6 +48,7 @@ export const ALL_SHORTCUTS: { id: ShortcutId; label: string; desc: string }[] = 
   { id: 'newChat', label: 'New chat', desc: 'Start a conversation (always shown)' },
   { id: 'newGroup', label: 'New group', desc: 'Create a group chat' },
   { id: 'archived', label: 'Archived chats', desc: 'Jump to archived conversations' },
+  { id: 'lock', label: 'Lock now', desc: 'Lock Chatter straight away (shows once you set a PIN)' },
 ]
 
 export const ALL_SECTIONS: { id: SectionId; label: string; desc: string }[] = [

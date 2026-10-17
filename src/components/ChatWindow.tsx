@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
+import { usePro } from '../pro'
+import { isChatOpened, markChatOpened, onOpenedChange } from '../appLock'
 import { ArrowLeft, Phone, Video, Search, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Lock, Unlock, Tag } from 'lucide-react'
 import type { Chat, Message } from '../data'
 import GhostCanvas from './GhostCanvas'
@@ -98,6 +100,8 @@ type Props = {
   onOpenGroup?: () => void
   onPinChat?: (v: boolean) => void
   chatActions?: ChatActions
+  /** real chats can be made confidential; decoy chats can't */
+  allowLock?: boolean
   polls?: {
     myId: string
     members: GroupMember[]
@@ -124,8 +128,11 @@ function StatusIcon({ status }: { status?: Message['status'] }) {
 const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
-export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, polls, calendar }: Props) {
+export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, polls, calendar }: Props) {
   const cstyle = useChatStyle()
+  const pro = usePro()
+  const opened = useSyncExternalStore(onOpenedChange, () => isChatOpened(rawChat.id))
+  const confidential = allowLock && pro.lockedChatIds.includes(rawChat.id) && !opened
   const [styleOpen, setStyleOpen] = useState(false)
   const edits = useEdits()
   const personEdit = edits.people[rawChat.id]
@@ -336,7 +343,15 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         </button>
       </header>
 
-      {styleOpen && <ChatStyleSheet chatId={rawChat.id} name={chat.name} pinned={!!rawChat.pinned} onPin={(v) => onPinChat?.(v)} onClose={() => setStyleOpen(false)} />}
+      {styleOpen && <ChatStyleSheet chatId={rawChat.id} name={chat.name} pinned={!!rawChat.pinned} onPin={(v) => onPinChat?.(v)} onClose={() => setStyleOpen(false)} lockable={allowLock} onUpgrade={onUpgrade} />}
+      {confidential && (
+        <PrivateLock
+          title="Confidential chat"
+          desc={`Verify it’s you to open your chat with ${chat.name.split(' ')[0]}.`}
+          onUnlock={() => markChatOpened(rawChat.id)}
+          onCancel={onBack}
+        />
+      )}
 
       {hasPrivate && (
         <div className="flex items-center justify-between gap-2 border-b border-[rgb(var(--border))] bg-[rgb(var(--bg-panel-soft))] px-4 py-1.5 text-xs text-[rgb(var(--text-secondary))] md:px-5">
@@ -383,14 +398,14 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         {holding && (
           <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
             <span className="rounded-full bg-[rgb(var(--bg-panel))] px-3 py-1.5 text-xs font-medium shadow-lg ring-1 ring-[rgb(var(--accent))]">
-              Keep holding… {chat.name.split(' ')[0]} needs to hold too
+              Keep holding to open Ghost Canvas…
             </span>
           </div>
         )}
         {wiped && (
           <div className="pointer-events-none absolute inset-x-0 top-3 z-20 flex justify-center">
             <span className="rounded-full bg-[rgb(var(--bg-panel))] px-3 py-1.5 text-xs font-medium shadow-lg ring-1 ring-[rgb(var(--border))]">
-              Canvas wiped · zero footprint left on both devices
+              Ghost Canvas closed · nothing was saved
             </span>
           </div>
         )}

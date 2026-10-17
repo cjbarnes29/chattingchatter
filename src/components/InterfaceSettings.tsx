@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { ChevronUp, ChevronDown, Lock, Sun, Moon, MonitorSmartphone, RotateCcw, Check, LayoutList, LayoutGrid, Users, MessageSquarePlus, Plus, Archive } from 'lucide-react'
+import { Lock as LockIcon } from 'lucide-react'
 import { Toggle } from './settingsUi'
 import { getInterface, saveInterface, previewInterface, cancelPreview, resolveDark } from '../interface'
 import {
@@ -89,6 +90,7 @@ const SHORTCUT_ICON: Record<ShortcutId, React.ReactNode> = {
   newChat: <MessageSquarePlus size={13} />,
   newGroup: <Plus size={13} />,
   archived: <Archive size={13} />,
+  lock: <LockIcon size={13} />,
 }
 const SAMPLE = [
   { name: 'Amy Chen', text: 'See you at 7! I’ll bring the snacks and the board game.', time: '18:42', unread: 2 },

@@ -1,5 +1,7 @@
-import { useRef } from 'react'
-import { X, Pin, Star, Image as ImageIcon, Music, Play, Trash2, Check } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { X, Pin, Star, Image as ImageIcon, Music, Play, Trash2, Check, Lock, Crown } from 'lucide-react'
+import { usePro } from '../pro'
+import { limit } from '../entitlements'
 import { useChatStyle, setPinColor, setFav, setWallpaper, fileToWallpaper, saveSound, clearSound, playSound, PIN_COLORS, DEFAULT_PIN, WALL_COLORS, WALL_PRESETS } from '../chatStyle'
 
 export function SoundControls({ chatId }: { chatId: string }) {
@@ -23,10 +25,24 @@ export function SoundControls({ chatId }: { chatId: string }) {
   )
 }
 
-type Props = { chatId: string; name: string; pinned: boolean; onPin: (v: boolean) => void; onClose: () => void }
+type Props = { chatId: string; name: string; pinned: boolean; onPin: (v: boolean) => void; onClose: () => void   /** show the confidential-chat lock (real chats only, never in decoy mode) */
+  lockable?: boolean
+  onUpgrade?: () => void
+}
 
-export default function ChatStyleSheet({ chatId, name, pinned, onPin, onClose }: Props) {
+export default function ChatStyleSheet({ chatId, name, pinned, onPin, onClose, lockable = false, onUpgrade }: Props) {
   const st = useChatStyle()
+  const pro = usePro()
+  const [lockMsg, setLockMsg] = useState<string | null>(null)
+  const locked = pro.lockedChatIds.includes(chatId)
+  const max = limit('confidentialChats', pro.isPro)
+  const toggleLock = () => {
+    setLockMsg(null)
+    if (locked) return pro.setChatLocked(chatId, false)
+    if (!pro.hasPins) return setLockMsg('Set a PIN first in Settings → Privacy & security. It’s what opens locked chats.')
+    if (pro.lockedChatIds.length >= max) return onUpgrade ? onUpgrade() : setLockMsg('Chatter Pro lets you lock more than one chat.')
+    pro.setChatLocked(chatId, true)
+  }
   const fileRef = useRef<HTMLInputElement>(null)
   const wp = st.wallpapers[chatId]
   const fav = !!st.favs[chatId]
@@ -44,6 +60,20 @@ export default function ChatStyleSheet({ chatId, name, pinned, onPin, onClose }:
           <Star size={17} className={fav ? 'fill-amber-400 text-amber-400' : ''} />
           <span className="flex-1">{fav ? 'In Favorites' : 'Add to Favorites'}</span>
         </button>
+
+        {lockable && (
+          <div className="mb-5">
+            <button onClick={toggleLock} aria-pressed={locked} className="flex w-full items-center gap-3 rounded-2xl bg-[rgb(var(--bg-panel-soft))] px-4 py-3 text-left text-sm font-semibold">
+              <Lock size={17} className={locked ? 'text-[rgb(var(--accent))]' : ''} />
+              <span className="flex-1">
+                {locked ? 'Confidential: needs PIN to open' : 'Make this chat confidential'}
+                <span className="block text-xs font-normal text-[rgb(var(--text-secondary))]">{locked ? 'Tap to remove the lock' : 'Locks it behind your PIN or fingerprint and hides its preview'}</span>
+              </span>
+              {!locked && !pro.isPro && pro.lockedChatIds.length >= max && <Crown size={14} className="text-[rgb(var(--accent))]" />}
+            </button>
+            {lockMsg && <p role="status" className="mt-1.5 px-1 text-xs text-rose-500">{lockMsg}</p>}
+          </div>
+        )}
 
         <p className={h}>Pin</p>
         <button onClick={() => onPin(!pinned)} className="mb-3 flex w-full items-center gap-3 rounded-2xl bg-[rgb(var(--bg-panel-soft))] px-4 py-3 text-left text-sm font-semibold">

@@ -1,67 +1,83 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Fingerprint, Lock, Sparkles, Mic, Eye, Tag, X, Send, Clock } from 'lucide-react'
-import { useAuth } from '../auth'
 import { usePro } from '../pro'
-import { biometricEnabled, enrollBiometric, verifyBiometric } from '../biometric'
+import { biometricEnabled, biometricEnrolled, verifyBiometric } from '../biometric'
+import { fmtWait } from '../pinLock'
 
-/* ---------- Biometric lock ---------- */
-export function PrivateLock({ onUnlock, onCancel }: { onUnlock: () => void; onCancel: () => void }) {
+/* ---------- Confidential lock ---------- */
+/** Asks for proof before showing confidential content: the fingerprint/face check if it is set up,
+ *  otherwise (or as a fallback) the real PIN. It never opens without one of them. The decoy PIN does
+ *  not open it, and wrong PINs count towards the app lock's wrong-guess limit. */
+export function PrivateLock({ onUnlock, onCancel, title = 'Private messages locked', desc = 'Verify it’s you to read confidential messages in this chat.' }: { onUnlock: () => void; onCancel: () => void; title?: string; desc?: string }) {
   const [state, setState] = useState<'idle' | 'scanning' | 'fail'>('idle')
   const [err, setErr] = useState('')
   const [pin, setPin] = useState('')
-  const { user } = useAuth()
-  const { hasPins, verifyPin } = usePro()
+  const { hasPins, verifyPin, lockedUntil } = usePro()
+  const canBio = biometricEnabled() && biometricEnrolled()
 
   const verify = async () => {
     setErr('')
-    if (!biometricEnabled()) return onUnlock()
     setState('scanning')
-    let r = await verifyBiometric()
-    if (!r.ok && r.error === 'not-enrolled') {
-      const en = await enrollBiometric(user?.id ?? 'me', user?.email ?? 'chatter')
-      r = en.ok ? await verifyBiometric() : en
-    }
+    const r = await verifyBiometric()
     if (r.ok) return onUnlock()
     setState('fail')
     setErr(r.error ?? 'Verification failed.')
   }
   const tryPin = async (v: string) => {
     setPin(v)
-    if (v.length >= 4 && (await verifyPin(v)) === 'real') onUnlock()
+    if (v.length < 4) return
+    if (Date.now() < lockedUntil) return setErr(`Too many wrong PINs. Try again in ${fmtWait(lockedUntil - Date.now())}.`)
+    // 6 digits check straight away; shorter PINs check on Enter
+    if (v.length < 6) return
+    await submit(v)
+  }
+  const submit = async (v: string) => {
+    const r = await verifyPin(v)
+    if (r === 'real') return onUnlock()
+    setPin('')
+    setErr(r === 'locked' ? 'Too many wrong PINs. Wait a moment and try again.' : 'That PIN didn’t work.')
   }
 
   return (
-    <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-[rgb(var(--bg-panel))]/90 p-6 text-center backdrop-blur-sm">
+    <div className="absolute inset-0 z-40 flex flex-col items-center justify-center gap-4 bg-[rgb(var(--bg-panel))] p-6 text-center">
       <button onClick={onCancel} aria-label="Close" className="absolute right-4 top-4 rounded-full p-2 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
         <X size={18} />
       </button>
       <div className={`flex h-20 w-20 items-center justify-center rounded-3xl bg-[rgb(var(--accent-soft))] text-[rgb(var(--accent))] ${state === 'scanning' ? 'animate-pulse' : ''}`}>
-        <Fingerprint size={40} />
+        {canBio ? <Fingerprint size={40} /> : <Lock size={36} />}
       </div>
       <div>
-        <p className="text-lg font-bold">Private messages locked</p>
-        <p className="mt-1 max-w-xs text-sm text-[rgb(var(--text-secondary))]">Verify with Face ID, Touch ID or your passcode to read confidential messages in this chat.</p>
+        <p className="text-lg font-bold">{title}</p>
+        <p className="mt-1 max-w-xs text-sm text-[rgb(var(--text-secondary))]">{desc}</p>
       </div>
-      <button
-        onClick={verify}
-        disabled={state === 'scanning'}
-        className="flex items-center gap-2 rounded-full bg-[rgb(var(--accent))] px-6 py-2.5 text-sm font-semibold text-[rgb(var(--accent-foreground))] shadow-md transition hover:scale-[1.02] active:scale-95 disabled:opacity-70"
-      >
-        <Lock size={16} />
-        {state === 'scanning' ? 'Verifying…' : 'Unlock with biometrics'}
-      </button>
-      {err && <p role="alert" className="max-w-xs text-xs text-rose-500">{err}</p>}
-      {state === 'fail' && hasPins && (
-        <input
-          type="password"
-          inputMode="numeric"
-          value={pin}
-          onChange={(e) => tryPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
-          placeholder="Or enter your PIN"
-          aria-label="PIN"
-          className="w-44 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3 py-2 text-center text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]"
-        />
+      {canBio && (
+        <button
+          onClick={verify}
+          disabled={state === 'scanning'}
+          className="flex items-center gap-2 rounded-full bg-[rgb(var(--accent))] px-6 py-2.5 text-sm font-semibold text-[rgb(var(--accent-foreground))] shadow-md transition hover:scale-[1.02] active:scale-95 disabled:opacity-70"
+        >
+          <Fingerprint size={16} />
+          {state === 'scanning' ? 'Verifying…' : 'Unlock with fingerprint or face'}
+        </button>
       )}
+      {hasPins ? (
+        <form onSubmit={(e) => { e.preventDefault(); void submit(pin) }} className="flex items-center gap-2">
+          <input
+            type="password"
+            inputMode="numeric"
+            autoFocus={!canBio}
+            value={pin}
+            onChange={(e) => void tryPin(e.target.value.replace(/\D/g, '').slice(0, 6))}
+            placeholder={canBio ? 'Or enter your PIN' : 'Enter your PIN'}
+            aria-label="PIN"
+            className="w-44 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3 py-2 text-center text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]"
+          />
+          <button type="submit" disabled={pin.length < 4} aria-label="Unlock" className="rounded-xl bg-[rgb(var(--accent))] p-2 text-[rgb(var(--accent-foreground))] disabled:opacity-40"><Lock size={16} /></button>
+        </form>
+      ) : (
+        !canBio && <p className="max-w-xs text-xs text-[rgb(var(--text-secondary))]">Set a PIN in Settings → Privacy &amp; security to open this.</p>
+      )}
+      {err && <p role="alert" className="max-w-xs text-xs text-rose-500">{err}</p>}
     </div>
   )
 }

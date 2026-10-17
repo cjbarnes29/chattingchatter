@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Brush, StickyNote, Sticker, Gamepad2, X, Fingerprint, Pin, ShieldCheck, Crown, Lock, Film, Calendar, Save, Maximize2, Minus, Plus } from 'lucide-react'
-import { Undo2, Send } from 'lucide-react'
+import { Undo2, Redo2, Send, Eraser, Hand, PenLine } from 'lucide-react'
 import { usePro } from '../pro'
 import { useAuth } from '../auth'
 import { supabase } from '../supabase'
 import { REAL_PREFIX } from '../realChats'
 import { readGhostPrefs } from '../prefs'
 import CalendarPanel from './CalendarPanel'
+import { drawStroke, strokeHits, type Brush as BrushId, type Stroke } from '../canvasDraw'
 import type { CalEvent } from '../calendar'
 
 type Mode = 'ink' | 'note' | 'stickers' | 'game' | 'widgets'
-type Brush = 'classic' | 'neon' | 'metal' | 'watercolor'
-type Stroke = { id: string; pts: [number, number][]; color: string; t: number; brush: Brush; w: number; life: number }
 type Note = { id: number; x: number; y: number; text: string; mine: boolean; life: number }
 type Sticker = { id: string; x: number; y: number; glyph: string }
 const SWATCHES = ['#7CF5C0', '#FFB86B', '#FF6B8A', '#7AB8FF', '#C792FF', '#FFFFFF']
@@ -22,7 +21,7 @@ const MINE = '#7CF5C0'
 const THEIRS = '#FFB86B'
 const GLYPHS = ['🌙', '🔥', '🌈', '🦋', '🍒', '⭐', '🎈', '🌊', '🪩', '🐚']
 const LINES = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]]
-const BRUSHES: { id: Brush; label: string; pro: boolean; color: string }[] = [
+const BRUSHES: { id: BrushId; label: string; pro: boolean; color: string }[] = [
   { id: 'classic', label: 'Classic', pro: false, color: MINE },
   { id: 'neon', label: 'Neon', pro: true, color: '#FF4FD8' },
   { id: 'metal', label: 'Metallic', pro: true, color: '#C9D4E0' },
@@ -44,26 +43,6 @@ function c4Winner(b: (string | null)[]): string | null {
     }
   }
   return null
-}
-
-function drawStroke(ctx: CanvasRenderingContext2D, s: Stroke, alpha: number) {
-  ctx.globalAlpha = alpha
-  ctx.lineCap = 'round'; ctx.lineJoin = 'round'
-  if (s.brush === 'neon') {
-    ctx.strokeStyle = s.color; ctx.shadowColor = s.color; ctx.shadowBlur = 22 * alpha; ctx.lineWidth = s.w
-  } else if (s.brush === 'metal') {
-    const g = ctx.createLinearGradient(0, 0, 0, 600)
-    g.addColorStop(0, '#FFFFFF'); g.addColorStop(0.5, s.color); g.addColorStop(1, '#4B5563')
-    ctx.strokeStyle = g; ctx.shadowColor = 'rgba(255,255,255,.4)'; ctx.shadowBlur = 4; ctx.lineWidth = s.w + 2
-  } else if (s.brush === 'watercolor') {
-    ctx.strokeStyle = s.color; ctx.shadowColor = s.color; ctx.shadowBlur = 18; ctx.lineWidth = s.w * 3; ctx.globalAlpha = alpha * 0.22
-    ctx.beginPath(); s.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke()
-    ctx.globalAlpha = alpha * 0.5; ctx.lineWidth = s.w * 1.4; ctx.shadowBlur = 6
-  } else {
-    ctx.strokeStyle = s.color; ctx.shadowColor = s.color; ctx.shadowBlur = 12 * alpha; ctx.lineWidth = s.w
-  }
-  ctx.beginPath(); s.pts.forEach(([x, y], i) => (i ? ctx.lineTo(x, y) : ctx.moveTo(x, y))); ctx.stroke()
-  ctx.globalAlpha = 1; ctx.shadowBlur = 0
 }
 
 type CalendarApi = {
@@ -109,7 +88,9 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
   }, [room])
   const [phase, setPhase] = useState<'waiting' | 'live'>('waiting')
   const [mode, setMode] = useState<Mode>('ink')
-  const [brush, setBrush] = useState<Brush>('classic')
+  const [brush, setBrush] = useState<BrushId>('classic')
+  const [tool, setTool] = useState<'pen' | 'eraser' | 'pan'>('pen')
+  const [opacity, setOpacity] = useState(1)
   const [notes, setNotes] = useState<Note[]>([])
   const [stickers, setStickers] = useState<Sticker[]>([])
   const [noteText, setNoteText] = useState('meet at 8?')
@@ -120,18 +101,21 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
   const [pinned, setPinned] = useState(false)
   const [held, setHeld] = useState(false)
   const [grace, setGrace] = useState(G.grace)
-  const [showMedia, setShowMedia] = useState(false)
   const [showCal, setShowCal] = useState(false)
   const [savePrompt, setSavePrompt] = useState(false)
   const [pw, setPw] = useState('')
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
-  const [mediaPos, setMediaPos] = useState({ x: 60, y: 60 })
   const wasHeld = useRef(false)
   const layer = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const strokes = useRef<Stroke[]>([])
   const drawing = useRef<Stroke | null>(null)
   const panning = useRef<{ x: number; y: number; vx: number; vy: number } | null>(null)
+  // touch points currently on the canvas, for two-finger pan and pinch zoom
+  const pointers = useRef(new Map<number, { x: number; y: number }>())
+  const pinch = useRef<{ d: number; cx: number; cy: number } | null>(null)
+  const redoStack = useRef<Stroke[]>([])
+  const peersSeen = useRef(new Set<string>())
   const idc = useRef(1)
   const viewRef = useRef(view)
   viewRef.current = view
@@ -211,6 +195,17 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
     return () => { cancelAnimationFrame(raf); window.removeEventListener('resize', fit) }
   }, [phase, G])
 
+  // sends the shared state (games, collage) to whoever just joined
+  const stateRef = useRef<() => void>(() => {})
+  stateRef.current = () => {
+    const ch = chan.current
+    if (!ch) return
+    ch.send({ type: 'broadcast', event: 'game', payload: { game } })
+    ch.send({ type: 'broadcast', event: 'ttt', payload: { cells: board, turn } })
+    ch.send({ type: 'broadcast', event: 'c4', payload: { cells: c4, turn: turn4 } })
+    stickersRef.current.forEach((st) => ch.send({ type: 'broadcast', event: 'sticker', payload: st }))
+  }
+
   const size = () => layer.current?.getBoundingClientRect() ?? ({ width: 600, height: 400 } as DOMRect)
 
   const dropNote = useCallback((x: number, y: number, text: string, mine: boolean, life: number = LIFE, share = false) => {
@@ -225,10 +220,18 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
     if (!room) return
     const ch = supabase.channel(`ghost:${room}`, { config: { presence: { key: myId } } })
     chan.current = ch
-    const sync = () => setPeerOnline(Object.keys(ch.presenceState()).some((k) => k !== myId))
+    const sync = () => {
+      const others = Object.keys(ch.presenceState()).filter((k) => k !== myId)
+      setPeerOnline(others.length > 0)
+      // someone new arrived: send them the current game and collage so they don't start from a blank board
+      if (others.some((k) => !peersSeen.current.has(k))) {
+        others.forEach((k) => peersSeen.current.add(k))
+        setTimeout(() => stateRef.current(), 300)
+      }
+    }
     ch.on('presence', { event: 'sync' }, sync)
     ch.on('broadcast', { event: 'stroke' }, ({ payload: p }) => {
-      strokes.current.push({ id: p.id, pts: [p.pt], color: p.color, brush: p.brush, w: p.w, life: p.life, t: Date.now() })
+      strokes.current.push({ id: p.id, pts: [p.pt], color: p.color, brush: p.brush, w: p.w, life: p.life, t: Date.now(), opacity: typeof p.opacity === 'number' ? Math.min(1, Math.max(0.1, p.opacity)) : 1 })
     })
     ch.on('broadcast', { event: 'pts' }, ({ payload: p }) => {
       const s = strokes.current.find((k) => k.id === p.id)
@@ -285,27 +288,78 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
     return toWorld(e.clientX - r.left, e.clientY - r.top)
   }
 
+  const eraseAt = (x: number, y: number) => {
+    const r = 12 / viewRef.current.z
+    const hit = strokes.current.filter((k) => strokeHits(k, x, y, r))
+    if (!hit.length) return
+    const ids = new Set(hit.map((k) => k.id))
+    strokes.current = strokes.current.filter((k) => !ids.has(k.id))
+    mine.current = mine.current.filter((id) => !ids.has(id))
+    hit.forEach((k) => emit('undo', { id: k.id }))
+  }
+
   const onDown = (e: React.PointerEvent) => {
+    const r = layer.current!.getBoundingClientRect()
+    pointers.current.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top })
+    // capture can be refused (e.g. the pointer already ended); drawing still works without it
+    try {
+      ;(e.target as Element).setPointerCapture?.(e.pointerId)
+    } catch {
+      /* ignore */
+    }
+    // a second finger turns the gesture into pan (everyone) and pinch zoom (Pro)
+    if (pointers.current.size === 2) {
+      const s = drawing.current
+      if (s && s.pts.length < 4) {
+        strokes.current = strokes.current.filter((k) => k.id !== s.id)
+        mine.current = mine.current.filter((id) => id !== s.id)
+        emit('undo', { id: s.id })
+      }
+      drawing.current = null
+      const [p1, p2] = [...pointers.current.values()]
+      pinch.current = { d: Math.hypot(p1.x - p2.x, p1.y - p2.y), cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2 }
+      return
+    }
+    if (pointers.current.size > 2) return
     if (mode === 'ink') {
-      if (e.button === 1 || e.altKey || e.shiftKey) {
+      if (tool === 'pan' || e.button === 1 || e.altKey || e.shiftKey) {
         panning.current = { x: e.clientX, y: e.clientY, vx: 0, vy: 0 }
-        ;(e.target as Element).setPointerCapture?.(e.pointerId)
         return
       }
-      ;(e.target as Element).setPointerCapture?.(e.pointerId)
+      if (tool === 'eraser') {
+        const [x, y] = pos(e)
+        eraseAt(x, y)
+        return
+      }
       const b = BRUSHES.find((x) => x.id === brush)!
-      const s: Stroke = { id: `${sid.current}${idc.current++}`, pts: [pos(e)], color: b.id === 'metal' ? b.color : myColor, t: Date.now(), brush, w: width, life: LIFE }
+      const s: Stroke = { id: `${sid.current}${idc.current++}`, pts: [pos(e)], color: b.id === 'metal' ? b.color : myColor, t: Date.now(), brush, w: width, life: LIFE, opacity: pro.isPro ? opacity : 1 }
       drawing.current = s
       strokes.current.push(s)
       mine.current.push(s.id)
+      redoStack.current = []
       pending.current = { id: s.id, pts: [] }
-      emit('stroke', { id: s.id, pt: s.pts[0], color: s.color, brush: s.brush, w: s.w, life: s.life })
+      emit('stroke', { id: s.id, pt: s.pts[0], color: s.color, brush: s.brush, w: s.w, life: s.life, opacity: s.opacity })
     } else if (mode === 'note') {
       const [x, y] = pos(e)
       dropNote(x, y, noteText || '✨', true, LIFE, true)
     }
   }
   const onMove = (e: React.PointerEvent) => {
+    const r = layer.current!.getBoundingClientRect()
+    if (pointers.current.has(e.pointerId)) pointers.current.set(e.pointerId, { x: e.clientX - r.left, y: e.clientY - r.top })
+    if (pinch.current && pointers.current.size >= 2) {
+      const [p1, p2] = [...pointers.current.values()]
+      const d = Math.hypot(p1.x - p2.x, p1.y - p2.y)
+      const cx = (p1.x + p2.x) / 2, cy = (p1.y + p2.y) / 2
+      const prev = pinch.current
+      setView((v) => {
+        const z = pro.isPro && prev.d > 0 ? Math.min(3, Math.max(0.4, v.z * (d / prev.d))) : v.z
+        const k = z / v.z
+        return { z, x: cx - (prev.cx - v.x) * k, y: cy - (prev.cy - v.y) * k }
+      })
+      pinch.current = { d, cx, cy }
+      return
+    }
     if (panning.current) {
       const dx = e.clientX - panning.current.x, dy = e.clientY - panning.current.y
       panning.current = { x: e.clientX, y: e.clientY, vx: dx, vy: dy }
@@ -314,18 +368,34 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
     }
     const p = pos(e)
     if (room && Date.now() - lastCursor.current > 60) { lastCursor.current = Date.now(); emit('cursor', { x: p[0], y: p[1] }) }
+    if (mode === 'ink' && tool === 'eraser' && e.buttons) return eraseAt(p[0], p[1])
     const s = drawing.current
     if (!s) return
     s.pts.push(p)
     s.t = Date.now()
     if (pending.current) pending.current.pts.push(p)
   }
-  const onUp = () => { flush(); drawing.current = null; panning.current = null }
+  const onUp = (e: React.PointerEvent) => {
+    pointers.current.delete(e.pointerId)
+    if (pointers.current.size < 2) pinch.current = null
+    flush(); drawing.current = null; panning.current = null
+  }
   const undo = () => {
     const id = mine.current.pop()
     if (!id) return
+    const s = strokes.current.find((k) => k.id === id)
+    if (s) redoStack.current.push(s)
     strokes.current = strokes.current.filter((k) => k.id !== id)
     emit('undo', { id })
+  }
+  const redo = () => {
+    const s = redoStack.current.pop()
+    if (!s) return
+    const again = { ...s, t: Date.now() }
+    strokes.current.push(again)
+    mine.current.push(again.id)
+    emit('stroke', { id: again.id, pt: again.pts[0], color: again.color, brush: again.brush, w: again.w, life: again.life, opacity: again.opacity })
+    emit('pts', { id: again.id, pts: again.pts.slice(1) })
   }
   const sendChat = (e: React.FormEvent) => {
     e.preventDefault()
@@ -419,10 +489,10 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
 
   const saveMasterpiece = async () => {
     if (pw.length < 4) return setSaveMsg('Password needs at least 4 characters.')
-    const payload = JSON.stringify({ strokes: strokes.current.filter((s) => Date.now() - s.t < s.life).map((s) => ({ pts: s.pts, color: s.color, brush: s.brush, w: s.w })), stickers, notes: notes.map(({ x, y, text, mine }) => ({ x, y, text, mine })), view })
+    const payload = JSON.stringify({ strokes: strokes.current.filter((s) => Date.now() - s.t < s.life).map((s) => ({ pts: s.pts, color: s.color, brush: s.brush, w: s.w, opacity: s.opacity })), stickers, notes: notes.map(({ x, y, text, mine }) => ({ x, y, text, mine })), view })
     await pro.saveMasterpiece(`Canvas · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, payload, pw)
-    setPw(''); setSavePrompt(false); setSaveMsg('Saved encrypted to this device')
-    window.setTimeout(() => setSaveMsg(null), 2200)
+    setPw(''); setSavePrompt(false); setSaveMsg('Saved encrypted on this device. Open it in Settings → Chatter Pro.')
+    window.setTimeout(() => setSaveMsg(null), 3200)
   }
 
   const requirePro = (fn: () => void) => () => (pro.isPro ? fn() : onUpgrade())
@@ -485,7 +555,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
             ))}
             <Fingerprint size={38} className="text-[#7CF5C0]" />
           </div>
-          <p className="text-sm text-white/70">Waiting for {friend} to hold the background…</p>
+          <p className="text-sm text-white/70">Opening Ghost Canvas…</p>
         </div>
       ) : (
         <>
@@ -496,6 +566,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
             onPointerMove={onMove}
             onPointerUp={onUp}
             onPointerCancel={onUp}
+            style={{ cursor: mode === 'ink' ? (tool === 'pan' ? 'grab' : tool === 'eraser' ? 'cell' : undefined) : undefined }}
             onWheel={onWheel}
           >
             <canvas ref={canvas} className="absolute inset-0 h-full w-full" />
@@ -555,26 +626,6 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
               </div>
             )}
 
-            {showMedia && (
-              <div
-                className="absolute z-10 w-64 cursor-move overflow-hidden rounded-2xl bg-black shadow-2xl ring-1 ring-white/15"
-                style={{ left: mediaPos.x, top: mediaPos.y }}
-                onPointerDown={(e) => {
-                  e.stopPropagation()
-                  const sx = e.clientX - mediaPos.x, sy = e.clientY - mediaPos.y
-                  const mv = (ev: PointerEvent) => setMediaPos({ x: ev.clientX - sx, y: ev.clientY - sy })
-                  const up = () => { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up) }
-                  window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up)
-                }}
-              >
-                <div className="flex items-center justify-between px-3 py-2 text-[11px] text-white/70"><span className="flex items-center gap-1"><Film size={12} /> Watch together</span><button onPointerDown={(e) => e.stopPropagation()} onClick={() => setShowMedia(false)} aria-label="Close player"><X size={13} /></button></div>
-                <div className="relative aspect-video">
-                  <img src="https://images.unsplash.com/photo-1536440136628-849c177e76a1?auto=format&fit=crop&w=600&q=70" alt="Shared video still" className="h-full w-full object-cover opacity-80" />
-                  <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold">▶ Playing together</span>
-                </div>
-              </div>
-            )}
-
             {showCal && (
               <div
                 className="absolute bottom-3 left-3 z-10 max-h-[70%] w-[min(20rem,calc(100%-1.5rem))] overflow-y-auto rounded-2xl bg-[#101a16] p-3 ring-1 ring-white/15"
@@ -603,7 +654,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
             </div>
           )}
           {mode === 'ink' && (
-            <div className="relative z-10 mx-auto flex max-w-full items-center gap-3 overflow-x-auto px-4 pb-2">
+            <div className="relative z-10 mx-auto flex max-w-full flex-wrap items-center justify-center gap-x-3 gap-y-2 px-4 pb-2">
               <div className="flex shrink-0 items-center gap-1.5">
                 {SWATCHES.map((c) => (
                   <button key={c} onClick={() => setMyColor(c)} aria-label={`Ink ${c}`} aria-pressed={myColor === c} className={`h-6 w-6 rounded-full transition ${myColor === c ? 'scale-110 ring-2 ring-white ring-offset-2 ring-offset-[#0B1210]' : 'ring-1 ring-white/20'}`} style={{ background: c }} />
@@ -615,25 +666,44 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
                   <button key={s} onClick={() => setLifeSec(s)} aria-pressed={lifeSec === s} className={`rounded-full px-2 py-1 ${lifeSec === s ? 'bg-[#7CF5C0] font-bold text-black' : 'text-white/70'}`}>{s}s</button>
                 ))}
               </div>
-              <button onClick={undo} aria-label="Undo my last stroke" className="shrink-0 rounded-full p-1.5 text-white/70 ring-1 ring-white/15 hover:bg-white/10"><Undo2 size={14} /></button>
+              <div className="flex shrink-0 items-center gap-0.5 rounded-full bg-white/10 p-0.5" role="radiogroup" aria-label="Canvas tool">
+                {([['pen', PenLine, 'Draw'], ['eraser', Eraser, 'Eraser'], ['pan', Hand, 'Move around']] as const).map(([id, Icon, label]) => (
+                  <button key={id} role="radio" aria-checked={tool === id} aria-label={label} title={label} onClick={() => setTool(id)} className={`rounded-full p-1.5 ${tool === id ? 'bg-[#7CF5C0] text-black' : 'text-white/70'}`}><Icon size={14} /></button>
+                ))}
+              </div>
+              <button onClick={undo} aria-label="Undo my last stroke" title="Undo" className="shrink-0 rounded-full p-1.5 text-white/70 ring-1 ring-white/15 hover:bg-white/10"><Undo2 size={14} /></button>
+              <button onClick={redo} aria-label="Redo" title="Redo" className="shrink-0 rounded-full p-1.5 text-white/70 ring-1 ring-white/15 hover:bg-white/10"><Redo2 size={14} /></button>
             </div>
           )}
           {mode === 'ink' && (
-            <div className="relative z-10 mx-auto flex max-w-full items-center gap-1.5 overflow-x-auto px-4 pb-2">
+            <div className="relative z-10 mx-auto flex max-w-full flex-wrap items-center justify-center gap-1.5 px-4 pb-2">
               {BRUSHES.map((b) => (
                 <button key={b.id} onClick={() => (b.pro && !pro.isPro ? onUpgrade() : setBrush(b.id))} aria-pressed={brush === b.id} className={`flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs ring-1 transition ${brush === b.id ? 'bg-white/15 ring-[#7CF5C0]' : 'ring-white/15 text-white/70 hover:bg-white/10'}`}>
                   <span className="h-2.5 w-2.5 rounded-full" style={{ background: b.color, boxShadow: b.id === 'neon' ? `0 0 8px ${b.color}` : undefined }} />
                   {b.label}{b.pro && !pro.isPro && <Crown size={10} className="text-[#7CF5C0]" />}
                 </button>
               ))}
-              <span className="ml-auto flex shrink-0 items-center gap-1 pl-2 text-[10px] text-white/45">
-                {pro.isPro ? <><button onClick={() => setView((v) => ({ ...v, z: Math.max(0.4, v.z / 1.2) }))} aria-label="Zoom out" className="rounded p-1 hover:bg-white/10"><Minus size={12} /></button><Maximize2 size={11} /><button onClick={() => setView((v) => ({ ...v, z: Math.min(3, v.z * 1.2) }))} aria-label="Zoom in" className="rounded p-1 hover:bg-white/10"><Plus size={12} /></button></> : 'Shift-drag to pan'}
+              <span className="flex shrink-0 items-center gap-1 pl-2 text-[10px] text-white/45">
+                {pro.isPro ? (
+                  <>
+                    <label className="flex items-center gap-1" title="Opacity">
+                      <span className="sr-only">Opacity</span>
+                      <input type="range" min={20} max={100} step={10} value={Math.round(opacity * 100)} onChange={(e) => setOpacity(+e.target.value / 100)} aria-label="Ink opacity" className="w-14 accent-[#7CF5C0]" />
+                      <span className="w-7 tabular-nums">{Math.round(opacity * 100)}%</span>
+                    </label>
+                    <button onClick={() => setView((v) => ({ ...v, z: Math.max(0.4, v.z / 1.2) }))} aria-label="Zoom out" className="rounded p-1 hover:bg-white/10"><Minus size={12} /></button>
+                    <button onClick={() => setView({ x: 0, y: 0, z: 1 })} aria-label="Reset view" title="Reset view" className="rounded p-1 hover:bg-white/10"><Maximize2 size={11} /></button>
+                    <button onClick={() => setView((v) => ({ ...v, z: Math.min(3, v.z * 1.2) }))} aria-label="Zoom in" className="rounded p-1 hover:bg-white/10"><Plus size={12} /></button>
+                  </>
+                ) : (
+                  'Two fingers or the hand tool to move · Pro adds zoom & opacity'
+                )}
               </span>
             </div>
           )}
           {mode === 'widgets' && (
             <div className="relative z-10 mx-auto flex max-w-full gap-2 overflow-x-auto px-4 pb-2">
-              <button onClick={requirePro(() => setShowMedia((s) => !s))} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs ring-1 ${showMedia ? 'bg-[#7CF5C0] text-black ring-[#7CF5C0]' : 'ring-white/15 text-white/70'}`}><Film size={13} /> Media player</button>
+              <span className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs text-white/40 ring-1 ring-white/10" title="Watching videos together is not available yet"><Film size={13} /> Watch together · coming soon</span>
               <button onClick={() => setShowCal((s) => !s)} className={`flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs ring-1 ${showCal ? 'bg-[#7CF5C0] text-black ring-[#7CF5C0]' : 'ring-white/15 text-white/70'}`}><Calendar size={13} /> Shared calendar</button>
               {!pro.isPro && <span className="self-center text-[10px] text-white/45">Pro widgets</span>}
             </div>
@@ -641,7 +711,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
 
           {onSend && (
             <form onSubmit={sendChat} className="relative z-10 mx-auto flex w-full max-w-md items-center gap-2 px-4 pb-2">
-              <input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} placeholder="Type to chat while you draw…" aria-label="Chat message" className="min-w-0 flex-1 rounded-full bg-white/10 px-4 py-2 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
+              <input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} placeholder="Send a chat message (saved in the chat, not ghosted)" aria-label="Chat message, saved in the chat" className="min-w-0 flex-1 rounded-full bg-white/10 px-4 py-2 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
               <button type="submit" aria-label="Send message" className="rounded-full bg-[#7CF5C0] p-2 text-black"><Send size={14} /></button>
             </form>
           )}
