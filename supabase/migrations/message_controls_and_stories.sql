@@ -49,6 +49,12 @@ alter table public.stories drop constraint if exists stories_audience_check;
 alter table public.stories add constraint stories_audience_check check (audience in ('contacts','close','only','except'));
 alter table public.stories add column if not exists audience_ids uuid[] not null default '{}';
 alter table public.stories add column if not exists media_key text;
+alter table public.stories add column if not exists music_key text;
+-- a story can only point at files in its own author's folder, so it can't be used to read someone else's file
+alter table public.stories drop constraint if exists stories_files_own;
+alter table public.stories add constraint stories_files_own check (
+  (media_key is null or media_key like 'story/' || author_id::text || '/%')
+  and (music_key is null or music_key like 'story/' || author_id::text || '/%'));
 alter table public.stories drop constraint if exists stories_audience_ids_len;
 alter table public.stories add constraint stories_audience_ids_len check (cardinality(audience_ids) <= 500);
 
@@ -88,6 +94,9 @@ create table if not exists public.story_replies (
   is_public boolean not null default false,
   created_at timestamptz not null default now()
 );
+alter table public.story_replies drop constraint if exists story_replies_file_own;
+alter table public.story_replies add constraint story_replies_file_own check (
+  media_key is null or media_key like 'reply/' || story_id::text || '/' || author_id::text || '/%');
 create index if not exists story_replies_story on public.story_replies (story_id, created_at);
 alter table public.story_replies enable row level security;
 
@@ -145,7 +154,7 @@ drop policy if exists "story media: open" on storage.objects;
 create policy "story media: open" on storage.objects for select to authenticated using (
   bucket_id = 'story-media' and (
     ((storage.foldername(name))[1] = 'story' and (storage.foldername(name))[2] = auth.uid()::text)
-    or exists (select 1 from public.stories s where s.media_key = name and s.visible_until > now()
+    or exists (select 1 from public.stories s where (s.media_key = name or s.music_key = name) and s.visible_until > now()
                and public.can_see_story_row(s.author_id, s.audience, s.audience_ids))
     or exists (select 1 from public.story_replies r join public.stories s on s.id = r.story_id
                where r.media_key = name and s.visible_until > now()

@@ -390,6 +390,7 @@ export function useStories(myId: string) {
         if (!key) return { ok: false, error: NEEDS_UPDATE, needsUpdate: true }
         row.body = encodeStory({ key, type: opts.media ? type : music!.type, ...(opts.media && music ? { music } : {}) }, body)
         row.media_key = key
+        if (opts.media && music) row.music_key = music.key
       }
       if (opts.audience && opts.audience !== 'contacts') {
         if ((opts.audience === 'only' || opts.audience === 'close') && !opts.audienceIds?.length) return { ok: false, error: opts.audience === 'close' ? 'Your close-friends list is empty. Add people first.' : 'Pick at least one person.' }
