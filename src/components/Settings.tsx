@@ -8,6 +8,7 @@ import AppearanceSettings from './AppearanceSettings'
 import InterfaceSettings from './InterfaceSettings'
 import FeatureSettings from './FeatureSettings'
 import AppPermissions from './AppPermissions'
+import DecoyManager from './DecoyManager'
 import { isNative } from '../native'
 import { PinGate } from './PinGate'
 import { useNotifPrefs, usePrivacyPrefs } from '../prefs'
@@ -138,7 +139,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
     ...(isNative() ? [{ id: 'permissions' as const, icon: <Smartphone size={16} />, title: 'App permissions', desc: 'Camera, microphone, notifications, fingerprint' }] : []),
     { id: 'gestures', icon: <Hand size={16} />, title: 'Chats & gestures', desc: 'Swipes, taps and shortcuts' },
     { id: 'ghost', icon: <Palette size={16} />, title: 'Ghost Canvas', desc: 'Ink, fade-out time and grid' },
-    { id: 'decoy', icon: <EyeOff size={16} />, title: 'Decoy chats', desc: 'Edit what the decoy PIN shows', hideInDecoy: true },
+    { id: 'decoy', icon: <EyeOff size={16} />, title: 'Decoy chats', desc: 'Create and edit the fake chats the decoy PIN shows', hideInDecoy: true },
     { id: 'pro', icon: <Crown size={16} />, title: 'Chatter Pro', desc: isPro ? 'Plan, focus mode and tools' : 'Unlock decoy profiles, canvas toolkit and more', hideInDecoy: true },
   ]
   const items = MENU.filter((m) => !(decoy && m.hideInDecoy))
@@ -324,7 +325,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
               <FeatureSettings section="ghost" />
             </>
           )}
-          {page === 'decoy' && <FeatureSettings section="decoy" />}
+          {page === 'decoy' && <DecoyManager />}
           {page === 'pro' && <ProSettings only="pro" onUpgrade={onUpgrade} />}
         </div>
       </div>

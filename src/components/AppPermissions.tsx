@@ -4,7 +4,7 @@ import { Device, type DeviceStatus, type PermName } from '../native'
 import { ensurePermission } from '../permissions'
 
 const ROWS: { name: PermName; icon: typeof Mic; title: string; desc: string }[] = [
-  { name: 'microphone', icon: Mic, title: 'Microphone', desc: 'Voice and video calls' },
+  { name: 'microphone', icon: Mic, title: 'Microphone', desc: 'Calls and voice messages' },
   { name: 'camera', icon: Camera, title: 'Camera', desc: 'Video calls' },
   { name: 'notifications', icon: Bell, title: 'Notifications', desc: 'Event reminders' },
 ]

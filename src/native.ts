@@ -14,7 +14,8 @@ interface ChatterDevicePlugin {
   openSettings(): Promise<void>
   verifyBiometric(o: { title: string; subtitle?: string }): Promise<{ ok: boolean; code?: string; message?: string }>
   showNotification(o: { id: string; title: string; body: string }): Promise<void>
-  saveFile(o: { name: string; mime: string; text: string }): Promise<{ saved: boolean }>
+  /** text for text files, or base64 for any other file */
+  saveFile(o: { name: string; mime: string; text?: string; base64?: string }): Promise<{ saved: boolean }>
 }
 
 export const isNative = () => Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android'

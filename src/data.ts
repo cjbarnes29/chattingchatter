@@ -11,6 +11,8 @@ export type Message = {
   viewing?: boolean
   day?: number
   poll?: Poll
+  /** "Today", "Yesterday", a weekday or a date; when set, the chat shows a date divider where it changes */
+  dateLabel?: string
 }
 
 export type Chat = {

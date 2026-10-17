@@ -18,10 +18,16 @@ import ChatStyleSheet from './ChatStyleSheet'
 import { ProfileSheet, PhotoZoom } from './ProfileView'
 import { useAppearance } from '../appearance'
 import { useChatStyle, wallpaperStyle } from '../chatStyle'
+import EmojiPicker from './EmojiPicker'
+import { insertAtCaret } from '../caret'
+import VoiceRecorder, { type Recording } from './VoiceRecorder'
+import VoiceMessage from './VoiceMessage'
+import FileMessage from './FileMessage'
+import { checkFile, encodeAttachment, parseAttachment, previewText } from '../attachmentFormat'
+import type { AttachmentApi } from '../attachmentStore'
 import {
   PrivateLock,
   SmartReplies,
-  VoiceToText,
   MoodIndicator,
   EmojiStory,
   isEmojiStory,
@@ -102,6 +108,10 @@ type Props = {
   chatActions?: ChatActions
   /** real chats can be made confidential; decoy chats can't */
   allowLock?: boolean
+  /** where this chat's files and voice messages are kept; without it, attach and voice are off */
+  attachments?: AttachmentApi
+  /** keeps recently used emojis apart, so decoy mode never shows what was used in real chats */
+  emojiScope?: string
   polls?: {
     myId: string
     members: GroupMember[]
@@ -128,7 +138,7 @@ function StatusIcon({ status }: { status?: Message['status'] }) {
 const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
-export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, polls, calendar }: Props) {
+export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, attachments, emojiScope = 'real', polls, calendar }: Props) {
   const cstyle = useChatStyle()
   const pro = usePro()
   const opened = useSyncExternalStore(onOpenedChange, () => isChatOpened(rawChat.id))
@@ -199,7 +209,8 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [chat.messages.length, typing, chat.id])
 
-  const lastOther = [...chat.messages].reverse().find((m) => !m.fromMe)?.text
+  const lastOtherRaw = [...chat.messages].reverse().find((m) => !m.fromMe)?.text
+  const lastOther = lastOtherRaw && !parseAttachment(lastOtherRaw) ? lastOtherRaw : undefined
   const hasPrivate = chat.messages.some((m) => m.private)
 
   // Timeline anchors: media-like thumbnails from the chat's own avatars/unsplash set, one per day group
@@ -219,11 +230,50 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
     const text = draft.trim()
     if (!text) return
     const quoted = chat.messages.find((m) => m.id === replyTo)
-    const q = quoted ? `↪ ${quoted.text.replace(/^↪ [^\n]*\n/, '').replace(/\n/g, ' ').slice(0, 80)}\n` : ''
+    const q = quoted ? `↪ ${previewText(quoted.text).replace(/^↪ [^\n]*\n/, '').replace(/\n/g, ' ').slice(0, 80)}\n` : ''
     onSend(rawChat.id, q + text)
     setReplyTo(null)
     setDraft('')
+    setEmojiOpen(false)
   }
+
+  // ---------- emoji, files and voice messages ----------
+  const inputRef = useRef<HTMLTextAreaElement>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  const [recording, setRecording] = useState(false)
+  const [sending, setSending] = useState<string | null>(null)
+  const [sendErr, setSendErr] = useState<string | null>(null)
+  const errTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const showErr = useCallback((msg: string) => {
+    setSendErr(msg)
+    clearTimeout(errTimer.current)
+    errTimer.current = setTimeout(() => setSendErr(null), 6000)
+  }, [])
+  useEffect(() => () => clearTimeout(errTimer.current), [])
+
+  const sendFiles = async (files: File[]) => {
+    if (!attachments) return
+    for (const f of files) {
+      const bad = checkFile(f)
+      if (bad) { showErr(bad); continue }
+      setSending(f.name)
+      const type = f.type || 'application/octet-stream'
+      const up = await attachments.upload(f, f.name, type)
+      if (!up.ok) { showErr(up.error); continue }
+      onSend(rawChat.id, encodeAttachment({ kind: 'file', key: up.key, name: f.name.slice(0, 200), size: f.size, type }))
+    }
+    setSending(null)
+  }
+
+  const sendVoice = useCallback(async (r: Recording) => {
+    if (!attachments) return
+    setSending('voice message')
+    const up = await attachments.upload(r.blob, 'voice-message', r.type)
+    setSending(null)
+    if (!up.ok) return showErr(up.error)
+    onSend(rawChat.id, encodeAttachment({ kind: 'voice', key: up.key, size: r.blob.size, type: r.type, duration: r.duration, wave: r.wave, transcript: r.transcript, lang: r.lang }))
+  }, [attachments, onSend, rawChat.id, showErr])
 
   const subtitle = typing ? 'typing…' : chat.online ? 'online' : chat.lastSeen ?? 'offline'
 
@@ -419,23 +469,32 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
           />
         )}
         <div data-bg="1" className="mx-auto flex max-w-3xl flex-col gap-1.5">
-          <div className="my-2 flex justify-center">
-            <span className="rounded-lg bg-[rgb(var(--bg-panel))] px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-[rgb(var(--text-secondary))] shadow-sm">
-              {activeDay !== null ? DAY_LABELS[activeDay] ?? 'Earlier' : 'Today'}
-            </span>
-          </div>
+          {!visibleMessages.some((m) => m.dateLabel) && (
+            <div className="my-2 flex justify-center">
+              <span className="rounded-lg bg-[rgb(var(--bg-panel))] px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-[rgb(var(--text-secondary))] shadow-sm">
+                {activeDay !== null ? DAY_LABELS[activeDay] ?? 'Earlier' : 'Today'}
+              </span>
+            </div>
+          )}
           {visibleMessages.map((m, i) => {
             const prev = visibleMessages[i - 1]
-            const grouped = prev && prev.fromMe === m.fromMe
+            const newDay = !!m.dateLabel && m.dateLabel !== prev?.dateLabel
+            const grouped = prev && prev.fromMe === m.fromMe && !newDay
             const hidden = m.private && !unlocked
             const tags = tagsOf(m)
             const reaction = edits.msgs[m.id]?.reaction
-            const quoteMatch = !hidden && !story0(m.text) ? /^↪ ([^\n]*)\n([\s\S]*)$/.exec(m.text) : null
+            const att = !hidden ? parseAttachment(m.text) : null
+            const quoteMatch = !hidden && !att && !story0(m.text) ? /^↪ ([^\n]*)\n([\s\S]*)$/.exec(m.text) : null
             const viewed = !m.fromMe && i === visibleMessages.length - 1
-            const story = !hidden && isEmojiStory(m.text)
+            const story = !hidden && !att && isEmojiStory(m.text)
             return (
+              <div key={m.id}>
+              {newDay && (
+                <div className="my-2 flex justify-center" role="separator">
+                  <span className="rounded-lg bg-[rgb(var(--bg-panel))] px-3 py-1 text-[11px] font-medium uppercase tracking-wider text-[rgb(var(--text-secondary))] shadow-sm">{m.dateLabel}</span>
+                </div>
+              )}
               <div
-                key={m.id}
                 ref={(el) => {
                   msgRefs.current[m.id] = el
                 }}
@@ -473,6 +532,10 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
                       <p className="flex items-center gap-2 italic text-[rgb(var(--text-secondary))]">
                         <Lock size={14} /> Locked private message · tap to unlock
                       </p>
+                    ) : att?.kind === 'voice' ? (
+                      <VoiceMessage att={att} api={attachments} fromMe={m.fromMe} />
+                    ) : att?.kind === 'file' ? (
+                      <FileMessage att={att} api={attachments} />
                     ) : story ? (
                       <EmojiStory text={m.text} />
                     ) : quoteMatch ? (
@@ -509,6 +572,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
                   )}
                 </div>
               </div>
+              </div>
             )
           })}
           {typing && (
@@ -526,8 +590,14 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
       {replyTo && (
         <div className="flex items-center gap-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs md:px-5">
           <Reply size={14} className="shrink-0 text-[rgb(var(--accent))]" />
-          <p className="min-w-0 flex-1 truncate text-[rgb(var(--text-secondary))]">Replying to “{chat.messages.find((m) => m.id === replyTo)?.text.replace(/^↪ [^\n]*\n/, '')}”</p>
+          <p className="min-w-0 flex-1 truncate text-[rgb(var(--text-secondary))]">Replying to “{previewText(chat.messages.find((m) => m.id === replyTo)?.text ?? '').replace(/^↪ [^\n]*\n/, '')}”</p>
           <button onClick={() => setReplyTo(null)} aria-label="Cancel reply" className="rounded-full p-1 hover:bg-[rgb(var(--accent-soft))]"><XIcon size={14} /></button>
+        </div>
+      )}
+      {(sending || sendErr) && (
+        <div role={sendErr ? 'alert' : 'status'} className={`flex items-center gap-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs md:px-5 ${sendErr ? 'text-rose-500' : 'text-[rgb(var(--text-secondary))]'}`}>
+          <span className="min-w-0 flex-1">{sendErr ?? `Sending ${sending}…`}</span>
+          {sendErr && <button type="button" onClick={() => setSendErr(null)} aria-label="Dismiss" className="rounded-full p-1 hover:bg-[rgb(var(--accent-soft))]"><XIcon size={14} /></button>}
         </div>
       )}
 
@@ -536,20 +606,53 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
           e.preventDefault()
           submit()
         }}
-        className="flex items-end gap-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-3 py-3 md:px-5"
+        className="relative flex items-end gap-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-3 py-3 md:px-5"
       >
-        <button type="button" aria-label="Emoji" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
+        {emojiOpen && (
+          <EmojiPicker
+            scope={emojiScope}
+            className="absolute bottom-full left-2 mb-2"
+            onClose={() => setEmojiOpen(false)}
+            onPick={(e) => insertAtCaret(inputRef.current, draft, e, setDraft)}
+          />
+        )}
+        <button
+          type="button"
+          onClick={() => setEmojiOpen((o) => !o)}
+          aria-label="Emoji"
+          aria-expanded={emojiOpen}
+          aria-haspopup="dialog"
+          className={`rounded-full p-2.5 hover:bg-[rgb(var(--accent-soft))] ${emojiOpen ? 'text-[rgb(var(--accent))]' : 'text-[rgb(var(--text-secondary))]'}`}
+        >
           <Smile size={22} />
         </button>
-        <button type="button" aria-label="Attach" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
-          <Paperclip size={22} />
-        </button>
+        {attachments && (
+          <>
+            <button type="button" onClick={() => fileRef.current?.click()} disabled={!!sending} aria-label="Attach a file (up to 1 MB)" title="Attach a file (up to 1 MB)" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))] disabled:opacity-40">
+              <Paperclip size={22} />
+            </button>
+            <input
+              ref={fileRef}
+              type="file"
+              multiple
+              className="sr-only"
+              tabIndex={-1}
+              aria-hidden
+              onChange={(e) => {
+                const files = Array.from(e.target.files ?? [])
+                e.target.value = ''
+                void sendFiles(files)
+              }}
+            />
+          </>
+        )}
         {polls && (
           <button type="button" onClick={() => setPollOpen(true)} aria-label="Create poll" title="Create poll" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
             <BarChart3 size={22} />
           </button>
         )}
         <textarea
+          ref={inputRef}
           rows={1}
           value={draft}
           onChange={(e) => {
@@ -574,15 +677,16 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
           >
             <Send size={18} className="translate-x-px" />
           </button>
-        ) : (
-          <VoiceToText onText={(t) => setDraft(t)} />
-        )}
+        ) : attachments ? (
+          <VoiceRecorder onSend={sendVoice} onError={showErr} onActiveChange={setRecording} />
+        ) : null}
+        {recording && <span className="sr-only">Recording a voice message</span>}
       </form>
       {sheetMsg && (() => {
         const m = chat.messages.find((x) => x.id === sheetMsg)
         const raw = rawChat.messages.find((x) => x.id === sheetMsg)
         if (!m || !raw) return null
-        return <MessageSheet id={m.id} text={m.text} time={m.time} edit={edits.msgs[m.id]} tags={tagsOf(m)} gestures={{ longPress: true }} onClose={() => setSheetMsg(null)} onReply={() => setReplyTo(m.id)} />
+        return <MessageSheet id={m.id} text={previewText(m.text)} time={m.time} edit={edits.msgs[m.id]} tags={tagsOf(m)} gestures={{ longPress: true }} onClose={() => setSheetMsg(null)} onReply={() => setReplyTo(m.id)} />
       })()}
       {zoomOpen && <PhotoZoom src={chat.avatar} name={chat.name} onClose={() => setZoomOpen(false)} />}
       {profileOpen && <ProfileSheet chat={chat} onClose={() => setProfileOpen(false)} onZoom={() => setZoomOpen(true)} onEditContact={() => { setProfileOpen(false); setPersonOpen(true) }} />}

@@ -1,13 +1,11 @@
-import { Bell, BellRing, Brush, CalendarDays, Camera, Check, Crown, Ghost, Plus, RotateCcw, Trash2 } from 'lucide-react'
-import { usePro } from '../pro'
-import { limit } from '../entitlements'
+import { useState } from 'react'
+import { Bell, BellRing, Brush, CalendarDays, Check, Ghost, RotateCcw } from 'lucide-react'
 import { useCalPrefs, useGhostPrefs, useGesturePrefs, INK_COLORS } from '../prefs'
-import { useDecoyItems, updateDecoy, removeDecoy, addDecoy, resetDecoys } from '../decoyStore'
-import { fileToAvatar } from '../edits'
 import { REMIND_OPTIONS, beep, ensureNotifyPermission, useNotifyPermission } from '../calendar'
 import { isNative } from '../native'
 import { useChatStyle, setSoundOn } from '../chatStyle'
 import { SoundControls } from './ChatStyleSheet'
+import { readTranscribe, setTranscribe, transcriptionSupported } from '../translate'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -30,9 +28,8 @@ function Row({ title, desc, children }: { title: string; desc?: string; children
 }
 
 const sel = 'rounded-lg bg-[rgb(var(--bg-panel))] px-2.5 py-1.5 text-xs font-medium ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))] outline-none'
-const fld = 'w-full rounded-lg bg-[rgb(var(--bg-panel))] px-2.5 py-1.5 text-sm outline-none ring-1 ring-[rgb(var(--border))] focus:ring-[rgb(var(--accent))]'
 
-export type FeatureSection = 'gestures' | 'sounds' | 'decoy' | 'calendar' | 'ghost'
+export type FeatureSection = 'gestures' | 'sounds' | 'calendar' | 'ghost'
 
 export default function FeatureSettings({ section }: { section: FeatureSection }) {
   const [cal, setCal] = useCalPrefs()
@@ -42,13 +39,7 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
 
   const cs = useChatStyle()
   const [gest, setGest] = useGesturePrefs()
-  const decoys = useDecoyItems()
-  const pro = usePro()
-  const pickDecoyPhoto = async (id: string, e: React.ChangeEvent<HTMLInputElement>) => {
-    const f = e.target.files?.[0]
-    e.target.value = ''
-    if (f) updateDecoy(id, { avatar: await fileToAvatar(f) })
-  }
+  const [transcribe, setTx] = useState(readTranscribe)
   const GESTURES: { key: keyof typeof gest; title: string; desc: string }[] = [
     { key: 'swipeReply', title: 'Swipe right to reply', desc: 'Drag a message to the right to reply to it' },
     { key: 'swipeChat', title: 'Swipe left on a chat', desc: 'Reveal Pin and Archive in your inbox' },
@@ -67,6 +58,14 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
             <Toggle on={gest[g.key]} onChange={(v) => setGest({ [g.key]: v })} label={g.title} />
           </Row>
         ))}
+        <Row
+          title="Voice message transcripts"
+          desc={transcriptionSupported()
+            ? 'Add a written transcript to voice messages you send, so they can be read and translated. Uses your browser’s speech service while you record.'
+            : 'Not available on this device, so voice messages are sent without a transcript.'}
+        >
+          <Toggle on={transcribe && transcriptionSupported()} onChange={(v) => { setTranscribe(v); setTx(v) }} label="Voice message transcripts" />
+        </Row>
       </div>
     )
 
@@ -80,33 +79,6 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
           <p className="mb-2 text-sm font-semibold">Your sound</p>
           <SoundControls chatId="global" />
           <p className="mt-2 text-[11px] text-[rgb(var(--text-secondary))]">Pick any audio file from your phone. To use a different sound for one person, open their chat and tap the palette icon.</p>
-        </div>
-      </div>
-    )
-
-  if (section === 'decoy')
-    return (
-      <div className="space-y-3 px-5 py-2">
-        <p className="text-xs text-[rgb(var(--text-secondary))]">These are the harmless chats shown when you enter your decoy PIN. Edit names, messages and times so it looks believable. Set the decoy PIN itself under Privacy &amp; security.</p>
-        {!pro.isPro && <p className="flex items-center gap-1.5 rounded-xl bg-[rgb(var(--accent-soft))] px-3 py-2 text-xs font-semibold text-[rgb(var(--accent))]"><Crown size={13} /> Free plan shows 1 decoy chat. Chatter Pro shows as many as you like.</p>}
-        {decoys.map((d, idx) => (
-          <div key={d.id} className={`flex items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-3 ${!pro.isPro && idx > 0 ? 'opacity-45' : ''}`}>
-            <label className="relative shrink-0 cursor-pointer" aria-label={`Change photo for ${d.name}`}>
-              <img src={d.avatar} alt="" className="h-12 w-12 rounded-full object-cover" />
-              <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"><Camera size={10} /></span>
-              <input type="file" accept="image/*" className="sr-only" onChange={(e) => pickDecoyPhoto(d.id, e)} />
-            </label>
-            <div className="min-w-0 flex-1 space-y-1.5">
-              <input value={d.name} onChange={(e) => updateDecoy(d.id, { name: e.target.value })} aria-label="Decoy name" maxLength={30} className={fld} />
-              <input value={d.text} onChange={(e) => updateDecoy(d.id, { text: e.target.value })} aria-label="Decoy message" maxLength={80} className={fld} />
-              <input type="time" value={/^\d{2}:\d{2}$/.test(d.time) ? d.time : '12:00'} onChange={(e) => updateDecoy(d.id, { time: e.target.value })} aria-label="Decoy time" className={fld} />
-            </div>
-            <button onClick={() => removeDecoy(d.id)} aria-label={`Remove ${d.name}`} className="rounded-full p-2 text-rose-500 hover:bg-rose-500/10"><Trash2 size={15} /></button>
-          </div>
-        ))}
-        <div className="flex items-center justify-between">
-          <button onClick={addDecoy} disabled={decoys.length >= limit('decoyChats', pro.isPro)} title={decoys.length >= limit('decoyChats', pro.isPro) ? 'Chatter Pro needed for more than one decoy chat' : undefined} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--accent))] px-3 py-1.5 text-xs font-semibold text-[rgb(var(--accent-foreground))] disabled:opacity-40"><Plus size={13} /> Add decoy chat</button>
-          <button onClick={resetDecoys} className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))] hover:underline"><RotateCcw size={12} /> Reset</button>
         </div>
       </div>
     )
@@ -155,11 +127,6 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
           <Brush size={13} className="text-[rgb(var(--text-tertiary))]" />
           <input type="range" min={2} max={12} value={ghost.inkWidth} onChange={(e) => setGhost({ inkWidth: +e.target.value })} aria-label="Brush thickness" className="w-28 accent-[rgb(var(--accent))]" />
         </div>
-      </Row>
-      <Row title="Hold-to-stay time" desc="Seconds to press and hold before the canvas closes">
-        <select value={ghost.grace} onChange={(e) => setGhost({ grace: +e.target.value })} aria-label="Hold-to-stay time" className={sel}>
-          {[3, 5, 8, 12].map((s) => <option key={s} value={s}>{s} seconds</option>)}
-        </select>
       </Row>
       <Row title="Dotted grid" desc="Show the faint dot grid behind drawings">
         <Toggle on={ghost.grid} onChange={(v) => setGhost({ grid: v })} label="Dotted grid" />

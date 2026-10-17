@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
-import { Brush, StickyNote, Sticker, Gamepad2, X, Fingerprint, Pin, ShieldCheck, Crown, Lock, Film, Calendar, Save, Maximize2, Minus, Plus } from 'lucide-react'
+import { Brush, StickyNote, Sticker, Gamepad2, X, Fingerprint, ShieldCheck, Crown, Lock, Film, Calendar, Save, Maximize2, Minus, Plus } from 'lucide-react'
 import { Undo2, Redo2, Send, Eraser, Hand, PenLine } from 'lucide-react'
 import { usePro } from '../pro'
 import { useAuth } from '../auth'
@@ -8,7 +8,7 @@ import { REAL_PREFIX } from '../realChats'
 import { readGhostPrefs } from '../prefs'
 import CalendarPanel from './CalendarPanel'
 import GhostWaiting from './GhostWaiting'
-import { CONNECT_TIMEOUT, INVITE_COOLDOWN, INVITE_TEXT, PEER_LEFT_DELAY, elapsedSecs, graceRuns, initialSession, inviteWait, reduce, viewOf, wipeOnLeave } from '../ghostSession'
+import { CONNECT_TIMEOUT, INVITE_COOLDOWN, INVITE_TEXT, PEER_LEFT_DELAY, elapsedSecs, initialSession, inviteWait, reduce, viewOf, wipeOnLeave } from '../ghostSession'
 import { drawStroke, strokeHits, type Brush as BrushId, type Stroke } from '../canvasDraw'
 import type { CalEvent } from '../calendar'
 
@@ -116,14 +116,10 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
   const [c4, setC4] = useState<(string | null)[]>(Array(C4_COLS * C4_ROWS).fill(null))
   const [game, setGame] = useState<Game>('tictactoe')
   const [view, setView] = useState({ x: 0, y: 0, z: 1 })
-  const [pinned, setPinned] = useState(false)
-  const [held, setHeld] = useState(false)
-  const [grace, setGrace] = useState(G.grace)
   const [showCal, setShowCal] = useState(false)
   const [savePrompt, setSavePrompt] = useState(false)
   const [pw, setPw] = useState('')
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
-  const wasHeld = useRef(false)
   const layer = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const strokes = useRef<Stroke[]>([])
@@ -168,21 +164,8 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
     }
   }, [onExit, G])
 
-  // The hold-to-stay countdown only runs when the other person is here (or on the solo demo canvas).
-  // Waiting alone never counts down, and when they (re)join the countdown starts fresh so a stale one can't close the canvas.
-  const graceOn = graceRuns(!!room, session)
-  useEffect(() => {
-    if (peerOnline) {
-      wasHeld.current = false
-      setGrace(G.grace)
-    }
-  }, [peerOnline, G.grace])
-  useEffect(() => {
-    if (phase !== 'live' || held || pinned || wasHeld.current || !graceOn) return
-    if (grace <= 0) { onExit(); return }
-    const t = setTimeout(() => setGrace((g) => g - 1), 1000)
-    return () => clearTimeout(t)
-  }, [phase, held, pinned, grace, onExit, graceOn])
+  // No countdown: the canvas stays open until you close it (X or Escape), or leave the app with
+  // "Close when I leave" on and something on the canvas to protect.
 
   // tick once a second while waiting so the elapsed time and invite cooldown stay current
   useEffect(() => {
@@ -483,13 +466,6 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
     dispatch({ type: 'retry' })
     setAttempt((a) => a + 1) // re-runs the channel effect, which closes the old channel first
   }
-  const releaseHold = () => {
-    setHeld(false)
-    if (pinned) return
-    // alone in a live room there is nobody to protect the canvas from, so letting go isn't "leaving"
-    if (room && session.peer !== 'present') { wasHeld.current = false; return }
-    onExit()
-  }
 
   const sendChat = (e: React.FormEvent) => {
     e.preventDefault()
@@ -626,9 +602,6 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
             {pro.isPro ? <Save size={12} /> : <Crown size={12} className="text-[#7CF5C0]" />} Save
           </button>
         )}
-        <button onClick={() => setPinned((p) => !p)} aria-pressed={pinned} className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition ${pinned ? 'bg-[#7CF5C0] text-black ring-[#7CF5C0]' : 'text-white/70 ring-white/20 hover:bg-white/10'}`}>
-          <Pin size={12} /> {pinned ? 'Pinned' : 'Pin'}
-        </button>
         <button onClick={onExit} aria-label="Wipe and exit" className="rounded-full p-2 text-white/70 hover:bg-white/10"><X size={18} /></button>
       </div>
 
@@ -832,14 +805,8 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
                 </button>
               ))}
             </div>
-            <button
-              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); wasHeld.current = true; setHeld(true) }}
-              onPointerUp={releaseHold}
-              onPointerCancel={releaseHold}
-              className={`flex h-14 items-center gap-2 rounded-full px-5 text-xs font-semibold ring-1 transition ${held || pinned ? 'bg-[#7CF5C0]/20 text-[#7CF5C0] ring-[#7CF5C0]' : 'text-white ring-white/30'}`}
-            >
-              <Fingerprint size={22} />
-              <span>{held || pinned ? 'Canvas alive' : !graceOn || wasHeld.current ? 'Hold to stay' : `Hold to stay · ${grace}s`}</span>
+            <button onClick={onExit} className="flex h-11 items-center gap-2 rounded-full px-4 text-xs font-semibold text-white ring-1 ring-white/30 hover:bg-white/10">
+              <X size={16} /> Exit canvas
             </button>
           </div>
         </>

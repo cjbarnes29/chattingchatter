@@ -9,7 +9,7 @@ import { Device, isNative, type PermName } from './native'
 export const WHY: Record<PermName, { title: string; text: string }> = {
   microphone: {
     title: 'Allow microphone?',
-    text: 'Chatter uses the microphone for voice and video calls. It only listens while you’re on a call.',
+    text: 'Chatter uses the microphone for calls and voice messages. It only listens while you’re on a call or holding the record button.',
   },
   camera: {
     title: 'Allow camera?',

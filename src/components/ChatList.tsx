@@ -9,6 +9,7 @@ import { readGesturePrefs } from '../prefs'
 import { useAppearance } from '../appearance'
 import { useInterface } from '../interface'
 import type { Density, TabId } from '../interfacePrefs'
+import { previewText } from '../attachmentFormat'
 
 type Props = {
   chats: Chat[]
@@ -44,7 +45,7 @@ const TAB_LABEL: Record<TabId, string> = { all: 'All', fav: 'Favorites', groups:
 function lastMessage(chat: Chat) {
   const m = chat.messages[chat.messages.length - 1]
   if (!m) return ''
-  return (m.fromMe ? 'You: ' : '') + m.text
+  return (m.fromMe ? 'You: ' : '') + previewText(m.text)
 }
 
 function SwipeRow({ chat, enabled, archived, onPin, onArchive, children }: { chat: Chat; enabled: boolean; archived: boolean; onPin?: (id: string, v: boolean) => void; onArchive?: (id: string, v: boolean) => void; children: React.ReactNode }) {

@@ -36,6 +36,8 @@ import { useIsDark, toggleDark, startInterfaceSync, useInterface } from './inter
 import Dashboard from './components/Dashboard'
 import { onLockRequest, forgetOpenedChats } from './appLock'
 import { setDecoyOwner } from './decoyStore'
+import { serverAttachments } from './attachmentStore'
+import { previewText } from './attachmentFormat'
 
 export default function Root() {
   return (
@@ -209,7 +211,7 @@ function App() {
       if (!first && seen.current[c.id] !== undefined && seen.current[c.id] !== last.id && !last.fromMe && !c.muted) {
         playSound(c.id)
         // confidential chats never show their text outside the chat
-        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews && !lockedChatIds.includes(c.id) ? last.text : 'New message' })
+        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews && !lockedChatIds.includes(c.id) ? previewText(last.text) : 'New message' })
       }
       seen.current[c.id] = last.id
     }
@@ -241,6 +243,12 @@ function App() {
   const typingApi = useTyping(user!.id, typingPeer)
 
   const activeChat = useMemo(() => chats.find((c) => c.id === activeId) ?? null, [chats, activeId])
+  // files and voice messages: a private folder per conversation (see attachmentStore.ts and chat_attachments.sql)
+  const activeAttachments = useMemo(() => {
+    if (activeId?.startsWith(REAL_PREFIX)) return serverAttachments(['dm', user!.id, activeId.slice(REAL_PREFIX.length)])
+    if (activeId?.startsWith(GROUP_PREFIX)) return serverAttachments(['group', activeId.slice(GROUP_PREFIX.length), user!.id])
+    return undefined
+  }, [activeId, user])
 
   const openChat = (id: string) => {
     setActiveId(id)
@@ -576,6 +584,7 @@ function App() {
               onPinChat={(v) => pinAny(activeChat.id, v)}
               chatActions={activeChatActions}
               allowLock
+              attachments={activeAttachments}
               calendar={calendarProps}
             />
           ) : dashboard ? (

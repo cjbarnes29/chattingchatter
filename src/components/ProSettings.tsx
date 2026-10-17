@@ -3,7 +3,9 @@ import { Crown, Lock, EyeOff, Clock, Trash2, Check, Brush, Fingerprint, Download
 import { usePro, type AutoLock, type Masterpiece } from '../pro'
 import { useAuth } from '../auth'
 import { bioUnlockEnabled, setBioUnlockEnabled, biometricEnrolled, enrollBiometric, verifyBiometric } from '../biometric'
-import { useDecoyItems, updateDecoy } from '../decoyStore'
+import { useDecoyContacts, updateContact } from '../decoyStore'
+import { previewText } from '../attachmentFormat'
+import { sortMessages } from '../decoyModel'
 import { validPin } from '../pinLock'
 import { FEATURES, STATUS_LABEL, limit } from '../entitlements'
 import MasterpieceViewer from './MasterpieceViewer'
@@ -52,7 +54,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const only = useContext(OnlyCtx)
   const [bioOn, setBioOn] = useState(() => bioUnlockEnabled())
   const [bioMsg, setBioMsg] = useState<{ ok: boolean; text: string } | null>(null)
-  const decoyItems = useDecoyItems()
+  const decoyItems = useDecoyContacts()
   const [pin, setPin] = useState('')
   const [decoy, setDecoy] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
@@ -202,8 +204,8 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
                 {decoyItems.map((c) => (
                   <li key={c.id} className="flex items-center gap-3 py-1">
                     <img src={c.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
-                    <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{c.name}</p><p className="truncate text-xs text-[rgb(var(--text-secondary))]">{c.text}</p></div>
-                    <Toggle on={!c.hidden} label={`Show ${c.name} in decoy`} onChange={(v) => updateDecoy(c.id, { hidden: !v })} />
+                    <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{c.name}</p><p className="truncate text-xs text-[rgb(var(--text-secondary))]">{previewText(sortMessages(c.messages)[c.messages.length - 1]?.text ?? 'No messages')}</p></div>
+                    <Toggle on={!c.hidden} label={`Show ${c.name} in decoy`} onChange={(v) => updateContact(c.id, { hidden: !v })} />
                   </li>
                 ))}
               </ul>

@@ -8,7 +8,9 @@ import ContactsPanel from './ContactsPanel'
 import { usePro } from '../pro'
 import { limit } from '../entitlements'
 import { useAuth } from '../auth'
-import { addDecoy, sendDecoyMessage, useDecoyItems, useDecoyThreads } from '../decoyStore'
+import { addContact, sendDecoyMessage, useDecoyContacts } from '../decoyStore'
+import { dateLabel, sortMessages, timeLabel } from '../decoyModel'
+import { localAttachments } from '../attachmentStore'
 import { useChatStyle, setLocalPin, DEFAULT_PIN } from '../chatStyle'
 import { useBackHandler } from '../backNav'
 import { useIsDark, toggleDark } from '../interface'
@@ -20,9 +22,10 @@ export default function DecoyApp() {
   const { user } = useAuth()
   const { isPro } = usePro()
   const decoyMax = limit('decoyChats', isPro)
-  const items = useDecoyItems()
-  const threads = useDecoyThreads()
+  const items = useDecoyContacts()
   const cs = useChatStyle()
+  // decoy files and voice messages stay on this device, apart from the real account's
+  const files = useMemo(() => (user ? localAttachments(`decoy:${user.id}`) : undefined), [user])
   const [activeId, setActiveId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
   const dark = useIsDark()
@@ -40,15 +43,22 @@ export default function DecoyApp() {
           id: i.id,
           name: i.name,
           avatar: i.avatar,
-          online: false,
-          lastSeen: 'last seen recently',
+          online: i.lastSeen.trim().toLowerCase() === 'online',
+          lastSeen: i.lastSeen,
           unread: 0,
           pinned: !!cs.pins[i.id],
           favorite: !!cs.favs[i.id],
           pinColor: cs.pinColors[i.id] ?? DEFAULT_PIN,
-          messages: [{ id: `${i.id}-seed`, fromMe: false, text: i.text, time: i.time }, ...(threads[i.id] ?? [])],
+          messages: sortMessages(i.messages).filter((m) => m.text.trim()).map((m) => ({
+            id: m.id,
+            fromMe: m.fromMe,
+            text: m.text,
+            time: timeLabel(m.at),
+            dateLabel: dateLabel(m.at),
+            status: m.fromMe ? m.status ?? 'read' : undefined,
+          })),
         })),
-    [items, threads, cs.pins, cs.favs, cs.pinColors, decoyMax],
+    [items, cs.pins, cs.favs, cs.pinColors, decoyMax],
   )
   const activeChat = chats.find((c) => c.id === activeId) ?? null
 
@@ -76,7 +86,11 @@ export default function DecoyApp() {
             onToggleDark={toggleDark}
             onOpenSettings={() => setSettingsOpen(true)}
             onUpgrade={() => setUpgradeOpen(true)}
-            onNewChat={() => (items.filter((i) => !i.hidden).length < decoyMax ? addDecoy() : setUpgradeOpen(true))}
+            onNewChat={() => {
+              if (items.filter((i) => !i.hidden).length >= decoyMax) return setUpgradeOpen(true)
+              const c = addContact()
+              if (c) setActiveId(c.id)
+            }}
             onOpenContacts={() => setContactsOpen(true)}
             showArchived={false}
             archivedCount={0}
@@ -107,6 +121,8 @@ export default function DecoyApp() {
               typing={false}
               onBack={() => setActiveId(null)}
               onSend={(id, text) => sendDecoyMessage(id, text)}
+              attachments={files}
+              emojiScope="decoy"
               onUpgrade={() => setUpgradeOpen(true)}
               onPinChat={(v) => setLocalPin(activeChat.id, v)}
             />

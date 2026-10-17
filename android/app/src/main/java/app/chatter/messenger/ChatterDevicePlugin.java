@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.util.Base64;
 import androidx.activity.result.ActivityResult;
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
@@ -189,7 +190,7 @@ public class ChatterDevicePlugin extends Plugin {
         call.resolve();
     }
 
-    /** Lets the user choose where to save a text file (system file picker; no storage permission needed). */
+    /** Lets the user choose where to save a file: text, or any file sent as base64 (system file picker; no storage permission needed). */
     @PluginMethod
     public void saveFile(PluginCall call) {
         Intent i = new Intent(Intent.ACTION_CREATE_DOCUMENT);
@@ -210,7 +211,8 @@ public class ChatterDevicePlugin extends Plugin {
         }
         try (OutputStream out = getContext().getContentResolver().openOutputStream(uri)) {
             if (out == null) throw new java.io.IOException("no stream");
-            out.write(call.getString("text", "").getBytes(StandardCharsets.UTF_8));
+            String b64 = call.getString("base64");
+            out.write(b64 != null ? Base64.decode(b64, Base64.DEFAULT) : call.getString("text", "").getBytes(StandardCharsets.UTF_8));
             r.put("saved", true);
             call.resolve(r);
         } catch (Exception e) {

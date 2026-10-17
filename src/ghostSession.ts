@@ -6,7 +6,7 @@
  *    with Retry. It never closes the canvas.
  *  - the WAIT notice (NOTICE_AFTER): the other person hasn't joined yet. This shows the waiting card.
  *    It never closes the canvas either; only the user (Exit), Escape, or leaving the screen with
- *    content on it (the "Close when I leave" privacy setting) does. */
+ *    content on it (the "Close when I leave" privacy setting) does. There is no countdown timer. */
 
 export type Link = 'connecting' | 'online' | 'failed'
 /** waiting = not seen yet this session · present = here now · away = was here, then disconnected */
@@ -76,10 +76,6 @@ export function inviteWait(s: Session, now: number) {
   if (s.invitedAt === null) return 0
   return Math.max(0, INVITE_COOLDOWN - Math.floor((now - s.invitedAt) / 1000))
 }
-
-/** The hold-to-stay countdown only runs when someone could actually be held for: no real room
- *  (demo canvas) or the other person is here. It never runs while you wait alone. */
-export const graceRuns = (hasRoom: boolean, s: Session) => !hasRoom || s.peer === 'present'
 
 /** "Close when I leave" only wipes when there is something to protect: the other person is here,
  *  or there is drawing/notes/stickers/game moves on the canvas. An empty canvas you're waiting on
