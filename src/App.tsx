@@ -13,6 +13,8 @@ import { PinGate } from './components/PinGate'
 import DecoyApp from './components/DecoyApp'
 import ExitDialog from './components/ExitDialog'
 import GroupCallOverlay from './components/GroupCallOverlay'
+import { useInboxPrivacy, readInboxPrivacy } from './inboxPrivacy'
+import { isNative, Device } from './native'
 import { useBackTrap, useBackHandler, exitApp } from './backNav'
 import { bioUnlockEnabled, biometricEnrolled } from './biometric'
 import { useGroupCall } from './groupCall'
@@ -196,6 +198,8 @@ function App() {
   const contactApi = useContacts(user!.id)
   const [contactsOpen, setContactsOpen] = useState(false)
   const [callMin, setCallMin] = useState(false)
+  const inboxPrivacy = useInboxPrivacy(user!.id)
+  const [inBackground, setInBackground] = useState(false)
   const [gcallMin, setGcallMin] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
@@ -227,7 +231,7 @@ function App() {
       if (!first && seen.current[c.id] !== undefined && seen.current[c.id] !== last.id && !last.fromMe && !c.muted) {
         playSound(c.id)
         // confidential chats never show their text outside the chat
-        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews && !lockedChatIds.includes(c.id) ? last.text : 'New message' })
+        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews && !readInboxPrivacy(user!.id).hidePreviews && !lockedChatIds.includes(c.id) ? last.text : 'New message' })
       }
       seen.current[c.id] = last.id
     }
@@ -374,6 +378,18 @@ function App() {
   const activeGroup = activeId?.startsWith(GROUP_PREFIX) ? groupApi.groups.find((g) => g.id === activeId.slice(GROUP_PREFIX.length)) ?? null : null
   const settingsGroup = groupSettingsId ? groupApi.groups.find((g) => g.id === groupSettingsId) ?? null : null
 
+  // Inbox privacy: blank the screen while Chatter is in the background, and block capture on Android
+  useEffect(() => {
+    const onVis = () => setInBackground(document.visibilityState === 'hidden')
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+  useEffect(() => {
+    if (!isNative() || !inboxPrivacy.blockCapture) return
+    void Device.setSecure({ enabled: true }).catch(() => {})
+    return () => { void Device.setSecure({ enabled: false }).catch(() => {}) }
+  }, [inboxPrivacy.blockCapture])
+
   // a finished call must never leave a stale "minimized" flag for the next one
   useEffect(() => {
     if (call.state === 'idle') setCallMin(false)
@@ -406,6 +422,7 @@ function App() {
 
   return (
     <div className="safe-shell flex w-full overflow-hidden bg-[rgb(var(--bg-app))]">
+      {inboxPrivacy.shieldOnLeave && inBackground && <div aria-hidden className="fixed inset-0 z-[200] bg-[rgb(var(--bg-app))]" />}
       {inFocus && (
         <div className="pointer-events-none fixed left-1/2 top-[calc(var(--sat)+0.75rem)] z-40 -translate-x-1/2 rounded-full bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs font-semibold shadow-lg ring-1 ring-[rgb(var(--accent))]">
           Focus mode on{bundled ? ` · ${bundled} notification${bundled > 1 ? 's' : ''} bundled` : ''}
@@ -443,6 +460,7 @@ function App() {
             query={query}
             onQuery={setQuery}
             onSelect={openChat}
+            inboxPrivacy={inboxPrivacy}
             dark={dark}
             onToggleDark={toggleDark}
             onOpenSettings={() => setSettingsOpen(true)}

@@ -14,6 +14,7 @@ interface ChatterDevicePlugin {
   openSettings(): Promise<void>
   verifyBiometric(o: { title: string; subtitle?: string }): Promise<{ ok: boolean; code?: string; message?: string }>
   showNotification(o: { id: string; title: string; body: string }): Promise<void>
+  setSecure(o: { enabled: boolean }): Promise<void>
   saveFile(o: { name: string; mime: string; text: string }): Promise<{ saved: boolean }>
 }
 

@@ -69,7 +69,7 @@ const STEPS: Step[] = [
     title: 'Decoy Mode',
     body: 'A second, different PIN opens a harmless look-alike Chatter.',
     points: [
-      'Set a decoy PIN in Settings → Privacy & security, and edit the pretend chats in Settings → Decoy chats.',
+      'Decoy controls are hidden on purpose. In Settings, swipe the Log out button to the left to set a decoy PIN and edit the pretend chats.',
       'In the decoy profile nothing from your real account is loaded. Attachments are switched off and the account, privacy and PIN pages are hidden.',
       'Logging out there just locks Chatter again. Only your real PIN or account password logs you out of the real account.',
     ],
