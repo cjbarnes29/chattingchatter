@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { MessageCircle, Mail, User as UserIcon, Lock, Loader2, MailCheck } from 'lucide-react'
+import { MessageCircle, Mail, User as UserIcon, Lock, Loader2, MailCheck, KeyRound } from 'lucide-react'
 import { useAuth } from '../auth'
 import InstallButton from './InstallButton'
 import ResetPassword from './ResetPassword'
@@ -11,7 +11,7 @@ const label = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-
 const input = 'w-full bg-transparent text-sm outline-none placeholder:text-[rgb(var(--text-tertiary))]'
 
 export default function AuthScreen() {
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, verifySignupCode, resendSignupCode } = useAuth()
   const [mode, setMode] = useState<'login' | 'register'>('login')
   const [forgot, setForgot] = useState(false)
   const [email, setEmail] = useState('')
@@ -20,6 +20,8 @@ export default function AuthScreen() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [confirmSent, setConfirmSent] = useState(false)
+  const [code, setCode] = useState('')
+  const [notice, setNotice] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
 
@@ -33,8 +35,36 @@ export default function AuthScreen() {
     setBusy(true)
     const res = mode === 'login' ? await signIn(email, password) : await signUp(email, password, name)
     setBusy(false)
+    if (!res.ok) {
+      setError(res.error)
+      // signing in to an unconfirmed account: jump straight to the code screen
+      if (res.unconfirmed) {
+        setConfirmSent(true)
+        setError(null)
+        setNotice('Enter the code from your sign-up email, or tap “Resend code” for a new one.')
+      }
+    } else if (res.needsConfirm) setConfirmSent(true)
+  }
+
+  const verify = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setNotice(null)
+    if (!/^\d{6,10}$/.test(code.trim())) return setError('Enter the code from the email.')
+    setBusy(true)
+    const res = await verifySignupCode(email, code)
+    setBusy(false)
     if (!res.ok) setError(res.error)
-    else if (res.needsConfirm) setConfirmSent(true)
+  }
+
+  const resend = async () => {
+    setError(null)
+    setNotice(null)
+    setBusy(true)
+    const res = await resendSignupCode(email)
+    setBusy(false)
+    if (res.ok) setNotice(`A new code is on its way to ${email}.`)
+    else setError(res.error)
   }
 
   if (showTerms) return <Terms onBack={() => setShowTerms(false)} />
@@ -63,7 +93,7 @@ export default function AuthScreen() {
           <h1 className="text-2xl font-extrabold tracking-tight">{confirmSent ? 'Check your inbox' : 'Welcome to Chatter'}</h1>
           <p className="mt-1.5 text-sm text-[rgb(var(--text-secondary))]">
             {confirmSent
-              ? `We sent a confirmation link to ${email}. Open it, then sign in here.`
+              ? `We emailed a code to ${email}. Enter it below to finish creating your account.`
               : mode === 'login'
                 ? 'Sign in to pick up your chats.'
                 : 'Create your account in seconds.'}
@@ -72,16 +102,51 @@ export default function AuthScreen() {
         </div>
 
         {confirmSent ? (
-          <button
-            onClick={() => {
-              setConfirmSent(false)
-              setMode('login')
-              setPassword('')
-            }}
-            className="w-full rounded-xl bg-[rgb(var(--accent))] py-3 font-semibold text-[rgb(var(--accent-foreground))] shadow-md transition hover:opacity-90"
-          >
-            Back to sign in
-          </button>
+          <form onSubmit={verify} className="space-y-4">
+            <label className="block">
+              <span className={label}>Confirmation code</span>
+              <span className={field}>
+                <KeyRound size={16} className="text-[rgb(var(--text-tertiary))]" />
+                <input
+                  value={code}
+                  onChange={(e) => setCode(e.target.value.replace(/\D/g, '').slice(0, 10))}
+                  placeholder="123456"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  className={`${input} tracking-[0.3em]`}
+                  autoFocus
+                />
+              </span>
+            </label>
+            {notice && <p className="text-sm text-[rgb(var(--text-secondary))]">{notice}</p>}
+            {error && <p role="alert" className="text-sm text-rose-500">{error}</p>}
+            <button
+              type="submit"
+              disabled={busy}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-[rgb(var(--accent))] py-3 font-semibold text-[rgb(var(--accent-foreground))] shadow-md transition hover:opacity-90 disabled:opacity-60"
+            >
+              {busy && <Loader2 size={16} className="animate-spin" />} Confirm account
+            </button>
+            <div className="flex items-center justify-between text-sm font-semibold">
+              <button type="button" onClick={resend} disabled={busy} className="text-[rgb(var(--accent))] disabled:opacity-60">
+                Resend code
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmSent(false)
+                  setMode('login')
+                  setPassword('')
+                  setCode('')
+                  setError(null)
+                  setNotice(null)
+                }}
+                className="text-[rgb(var(--text-secondary))]"
+              >
+                Back to sign in
+              </button>
+            </div>
+          </form>
         ) : (
           <>
             <div role="tablist" className="mb-6 grid grid-cols-2 rounded-xl bg-[rgb(var(--bg-panel-soft))] p-1">

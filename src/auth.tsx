@@ -17,12 +17,15 @@ export type User = {
 
 type ProfileRow = { name: string; avatar: string | null; about: string; nickname: string | null; age: number | null; status: string | null; presence_mode: string | null }
 
-type Result = { ok: true; needsConfirm?: boolean } | { ok: false; error: string }
+type Result = { ok: true; needsConfirm?: boolean } | { ok: false; error: string; unconfirmed?: boolean }
 
 type AuthState = {
   user: User | null
   signIn: (email: string, password: string) => Promise<Result>
   signUp: (email: string, password: string, name: string) => Promise<Result>
+  /** confirms a new account with the 6-digit code from the sign-up email; signs the user in on success */
+  verifySignupCode: (email: string, code: string) => Promise<Result>
+  resendSignupCode: (email: string) => Promise<Result>
   logout: () => void
   recovering: boolean
   requestReset: (email: string) => Promise<Result>
@@ -156,7 +159,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!isValidEmail(email)) return { ok: false, error: 'Please enter a valid email address.' }
     const { error } = await supabase.auth.signInWithPassword({ email, password })
     if (error) {
-      if (/confirm/i.test(error.message)) return { ok: false, error: 'Please confirm your email first — check your inbox for the link.' }
+      if (/confirm/i.test(error.message)) return { ok: false, error: 'Please confirm your email first. Enter the code we emailed you.', unconfirmed: true }
       return { ok: false, error: error.message === 'Invalid login credentials' ? 'Wrong email or password.' : error.message }
     }
     return { ok: true }
@@ -176,6 +179,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (data.user && data.user.identities && data.user.identities.length === 0)
       return { ok: false, error: 'This email is already registered. Sign in instead.' }
     return { ok: true, needsConfirm: !data.session }
+  }, [])
+
+  const verifySignupCode: AuthState['verifySignupCode'] = useCallback(async (rawEmail, code) => {
+    const email = rawEmail.trim().toLowerCase()
+    const { error } = await supabase.auth.verifyOtp({ email, token: code.trim(), type: 'signup' })
+    if (error) {
+      if (/expired/i.test(error.message)) return { ok: false, error: 'This code has expired. Tap “Resend code” for a new one.' }
+      if (/rate|too many|attempt/i.test(error.message)) return { ok: false, error: 'Too many tries. Please wait a few minutes and try again.' }
+      return { ok: false, error: 'That code is wrong or expired. Please check it and try again.' }
+    }
+    return { ok: true }
+  }, [])
+
+  const resendSignupCode: AuthState['resendSignupCode'] = useCallback(async (rawEmail) => {
+    const email = rawEmail.trim().toLowerCase()
+    const { error } = await supabase.auth.resend({ type: 'signup', email })
+    return error ? { ok: false, error: friendlyError(error.message) } : { ok: true }
   }, [])
 
   const logout = useCallback(() => {
@@ -265,8 +285,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [session, profile])
 
   const value = useMemo(
-    () => ({ user, signIn, signUp, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode }),
-    [user, signIn, signUp, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode],
+    () => ({ user, signIn, signUp, verifySignupCode, resendSignupCode, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode }),
+    [user, signIn, signUp, verifySignupCode, resendSignupCode, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode],
   )
 
   if (!ready) return null
