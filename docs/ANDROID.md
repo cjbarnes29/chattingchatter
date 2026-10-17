@@ -60,7 +60,7 @@ The browser version still uses WebAuthn (the device's platform authenticator).
 
 ## How it's built
 
-- **Web app → Android:** Capacitor 8. `yarn build` produces `dist/`, `npx cap sync android` copies it into the Android project. The app runs from files inside the APK, not from a website.
+- **Web app → Android:** Capacitor 8. `npm run build` produces `dist/`, `npx cap sync android` copies it into the Android project. The app runs from files inside the APK, not from a website.
 - **Native code:** `android/app/src/main/java/app/chatter/messenger/ChatterDevicePlugin.java`, registered in `MainActivity.java`. It provides permission state and requests (camera, microphone, notifications), BiometricPrompt, reminder notifications (channel "Event reminders"), the "Save to" file picker, and opening Chatter's page in phone settings. The JavaScript side is `src/native.ts`; permission explanations are in `src/permissions.ts` and `src/components/PermissionPrompt.tsx`; the settings page is `src/components/AppPermissions.tsx`.
 - **In-call camera/microphone:** the web view asks Capacitor, which asks Android. Chatter asks first (with its explanation), so by the time the call starts the permission is already decided.
 - **CI:** `.github/workflows/release.yml` (Actions → *Release Chatter APK*). It runs on every push to `main` and on demand. The log's *Show APK version, permissions and signer* step prints the version, the final merged permission list and the signing certificate, so any change to permissions shows up there.

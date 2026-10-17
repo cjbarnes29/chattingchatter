@@ -5,7 +5,7 @@ export type Message = {
   fromMe: boolean
   text: string
   time: string
-  status?: 'sent' | 'delivered' | 'read'
+  status?: 'queued' | 'failed' | 'sent' | 'delivered' | 'read'
   private?: boolean
   tags?: ('work' | 'plans' | 'ideas' | 'memories')[]
   viewing?: boolean

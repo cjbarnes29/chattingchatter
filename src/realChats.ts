@@ -4,6 +4,7 @@ import { avatarFor } from './auth'
 import { isPublicId, normalizePublicId } from './publicId'
 import type { Chat, Message } from './data'
 import { readPrivacyPrefs } from './prefs'
+import { afterFailure, classify, enqueue, loadOutbox, nextDue, patch, remove, saveOutbox, type OutItem } from './outbox'
 
 type Row = { id: string; sender_id: string; recipient_id: string; body: string; created_at: string; read_at: string | null }
 type Peer = {
@@ -54,6 +55,10 @@ export function useRealChats(myId: string) {
   const [peers, setPeers] = useState<Record<string, Peer>>({})
   const [loaded, setLoaded] = useState(false)
   const [openPeer, setOpenPeer] = useState<string | null>(null)
+  // messages not yet stored by the server; kept in storage so they survive restarts and bad networks
+  const [outbox, setOutbox] = useState<OutItem[]>(() => loadOutbox(localStorage, myId))
+  const outboxRef = useRef(outbox)
+  const busy = useRef(false)
   const peersRef = useRef(peers)
   peersRef.current = peers
 
@@ -145,14 +150,19 @@ export function useRealChats(myId: string) {
       .filter((id) => peers[id])
       .map((id) => {
         const p = peers[id]
-        const mine = rows.filter((r) => (r.sender_id === myId ? r.recipient_id : r.sender_id) === id)
-        const messages: Message[] = mine.map((r) => ({
-          id: r.id,
-          fromMe: r.sender_id === myId,
-          text: r.body,
-          time: fmt(r.created_at),
-          status: r.sender_id === myId ? (r.read_at ? 'read' : 'delivered') : undefined,
-        }))
+        const stored = rows.filter((r) => (r.sender_id === myId ? r.recipient_id : r.sender_id) === id)
+        const pending: Row[] = outbox.filter((o) => o.peerId === id && !stored.some((r) => r.id === o.id)).map((o) => ({ id: o.id, sender_id: myId, recipient_id: id, body: o.body, created_at: o.createdAt, read_at: null }))
+        const mine = [...stored, ...pending]
+        const messages: Message[] = mine.map((r) => {
+          const o = outbox.find((x) => x.id === r.id)
+          return {
+            id: r.id,
+            fromMe: r.sender_id === myId,
+            text: r.body,
+            time: fmt(r.created_at),
+            status: o && !stored.some((s) => s.id === r.id) ? (o.state === 'failed' ? 'failed' : 'queued') : r.sender_id === myId ? (r.read_at ? 'read' : 'delivered') : undefined,
+          }
+        })
         const unread = openPeer === id ? 0 : mine.filter((r) => r.sender_id === id && !r.read_at).length
         const pr = presenceOf(p)
         return {
@@ -168,17 +178,67 @@ export function useRealChats(myId: string) {
         } as Chat & { _t: string }
       })
       .sort((a, b) => (b as { _t: string })._t.localeCompare((a as { _t: string })._t))
-  }, [rows, peers, myId, openPeer])
+  }, [rows, peers, myId, openPeer, outbox])
+
+  const commit = useCallback((next: OutItem[]) => {
+    outboxRef.current = next
+    saveOutbox(localStorage, myId, next)
+    setOutbox(next)
+  }, [myId])
+
+  /** Sends the next due message; one at a time so order is kept. Called on enqueue, on reconnect and by a timer. */
+  const flush = useCallback(async () => {
+    if (busy.current) return
+    busy.current = true
+    try {
+      for (;;) {
+        const item = nextDue(outboxRef.current, Date.now())
+        if (!item) break
+        commit(patch(outboxRef.current, item.id, { state: 'sending' }))
+        let err: { code?: string; message?: string; status?: number } | null = null
+        try {
+          const res = await supabase.from('messages').insert({ id: item.id, recipient_id: item.peerId, body: item.body })
+          err = res.error ? { code: res.error.code, message: res.error.message, status: res.status } : null
+        } catch (e) {
+          err = { message: String(e) }
+        }
+        const outcome = classify(err)
+        if (outcome === 'delivered') {
+          addRow({ id: item.id, sender_id: myId, recipient_id: item.peerId, body: item.body, created_at: item.createdAt, read_at: null })
+          commit(remove(outboxRef.current, item.id))
+        } else {
+          commit(outboxRef.current.map((i) => (i.id === item.id ? afterFailure(i, outcome, Date.now()) : i)))
+          if (outcome === 'retry') break
+        }
+      }
+    } finally {
+      busy.current = false
+    }
+  }, [addRow, commit, myId])
+
+  /** Failed messages wait for a tap: try them again */
+  const retryFailed = useCallback(() => {
+    commit(outboxRef.current.map((i) => (i.state === 'failed' ? { ...i, state: 'queued' as const, attempts: 0, nextAt: 0 } : i)))
+    flush()
+  }, [commit, flush])
+
+  useEffect(() => {
+    // anything left "sending" by a closed app goes back in line
+    commit(loadOutbox(localStorage, myId))
+    flush()
+    const t = window.setInterval(flush, 5000)
+    window.addEventListener('online', flush)
+    window.addEventListener('chatter:retry-outbox', retryFailed)
+    return () => { window.clearInterval(t); window.removeEventListener('online', flush); window.removeEventListener('chatter:retry-outbox', retryFailed) }
+  }, [myId, commit, flush, retryFailed])
 
   const send = useCallback(
     async (chatId: string, text: string) => {
       const peerId = chatId.slice(REAL_PREFIX.length)
-      const id = crypto.randomUUID()
-      addRow({ id, sender_id: myId, recipient_id: peerId, body: text, created_at: new Date().toISOString(), read_at: null })
-      const { error } = await supabase.from('messages').insert({ id, recipient_id: peerId, body: text })
-      if (error) setRows((prev) => prev.filter((r) => r.id !== id))
+      commit(enqueue(outboxRef.current, { id: crypto.randomUUID(), peerId, body: text }))
+      flush()
     },
-    [addRow, myId],
+    [commit, flush],
   )
 
   /** Starts a chat with a friend, found by their email or their ID# */
@@ -195,5 +255,5 @@ export function useRealChats(myId: string) {
     return { ok: true, chatId: REAL_PREFIX + found.id }
   }, [])
 
-  return { chats, loaded, send, startChat, setOpenPeer, refresh }
+  return { chats, loaded, send, retryFailed, startChat, setOpenPeer, refresh }
 }

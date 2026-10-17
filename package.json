@@ -1,6 +1,8 @@
 {
   "name": "vite-react-typescript-starter",
   "private": true,
+  "packageManager": "npm@10.9.2",
+  "engines": { "node": ">=22" },
   "version": "0.0.0",
   "type": "module",
   "main": "electron/main.cjs",

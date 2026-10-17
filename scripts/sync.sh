@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-command sync to GitHub. Usage: yarn sync  (or: yarn sync "my message")
+# One-command sync to GitHub. Usage: npm run sync  (or: npm run sync "my message")
 # Needs env var GITHUB_TOKEN (fine-grained token, Contents: read/write on the repo).
 set -e
 REPO="cjbarnes29/chattingchatter"

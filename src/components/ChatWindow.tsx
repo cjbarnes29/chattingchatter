@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { usePro } from '../pro'
 import { isChatOpened, markChatOpened, onOpenedChange } from '../appLock'
-import { ArrowLeft, Phone, Video, Search, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Lock, Unlock, Tag } from 'lucide-react'
+import { Clock, AlertCircle, ArrowLeft, Phone, Video, Search, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Lock, Unlock, Tag } from 'lucide-react'
 import type { Chat, Message } from '../data'
 import GhostCanvas from './GhostCanvas'
 import { activeMention, insertMention, splitMentions } from '../mentions'
@@ -129,6 +129,8 @@ type Props = {
 
 function StatusIcon({ status }: { status?: Message['status'] }) {
   if (!status) return null
+  if (status === 'queued') return <Clock size={14} className="text-[rgb(var(--text-tertiary))]" aria-label="Waiting to send" />
+  if (status === 'failed') return <button type="button" title="Not sent. Tap to retry" aria-label="Not sent. Tap to retry" onClick={() => window.dispatchEvent(new Event('chatter:retry-outbox'))}><AlertCircle size={14} className="text-red-500" /></button>
   if (status === 'sent') return <Check size={14} className="text-[rgb(var(--text-tertiary))]" />
   if (status === 'delivered') return <CheckCheck size={14} className="text-[rgb(var(--text-tertiary))]" />
   return <CheckCheck size={14} className="text-sky-400" />

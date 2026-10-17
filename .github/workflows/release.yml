@@ -32,7 +32,7 @@ jobs:
           exit $missing
 
       - uses: actions/setup-node@v4
-        with: { node-version: 22 }
+        with: { node-version: 22, cache: npm }
       - uses: actions/setup-java@v5
         with: { distribution: temurin, java-version: 21 }
       - uses: gradle/actions/setup-gradle@v4
@@ -40,11 +40,16 @@ jobs:
           gradle-version: 8.14.3
 
       - name: Install web dependencies
-        run: yarn install
+        run: npm ci
+
+      - name: Typecheck and unit tests
+        run: |
+          npx tsc -b
+          npm test
 
       - name: Build web app and sync to Android
         run: |
-          yarn build
+          npm run build
           npx cap sync android
 
       - name: Build APK

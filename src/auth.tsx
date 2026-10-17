@@ -122,13 +122,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid])
 
-  // The shareable ID# is read on its own so an older database without the column still signs in
+  // The shareable ID# is read on its own (through get_profiles, the table column is not readable directly)
   const [publicId, setPublicId] = useState('')
   useEffect(() => {
     if (!uid) { setPublicId(''); return }
     let cancelled = false
-    supabase.from('profiles').select('public_id').eq('id', uid).maybeSingle().then(({ data, error }) => {
-      if (!cancelled && !error && data?.public_id) setPublicId(data.public_id as string)
+    supabase.rpc('get_profiles', { p_ids: [uid] }).then(({ data, error }) => {
+      const pid = (data as { public_id?: string | null }[] | null)?.[0]?.public_id
+      if (!cancelled && !error && pid) setPublicId(pid)
     })
     return () => { cancelled = true }
   }, [uid])
