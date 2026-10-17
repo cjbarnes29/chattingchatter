@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, Delete, Fingerprint, ShieldCheck } from 'lucide-react'
 import { usePro } from '../pro'
 import { verifyBiometric } from '../biometric'
+import { fmtWait } from '../pinLock'
 
 type Props = {
   onUnlock: () => void
@@ -9,38 +10,52 @@ type Props = {
   title?: string
   subtitle?: string
   onCancel?: () => void
-  /** Pro: swipe up to unlock with fingerprint / face */
+  /** Pro: unlock with fingerprint / face */
   bioUnlock?: boolean
-  /** a recognised fingerprint opens Chatter; one the phone rejects opens the decoy chats */
-  bioDecoy?: boolean
 }
 
 /** Asks for the PIN. Shown at launch for users who set a PIN, and again before logging out.
- *  The real PIN opens Chatter, the decoy PIN opens the harmless decoy profile.
+ *  The real PIN opens Chatter; the decoy PIN (if set) opens the harmless decoy profile.
  *  PINs are 4-6 digits: a 6th digit checks automatically, shorter PINs are confirmed with the check key.
- *  With fingerprint unlock on, swiping up asks the phone to check your fingerprint or face. */
-export function PinGate({ onUnlock, onDecoy, title = 'Enter your PIN', subtitle = 'Chatter is locked', onCancel, bioUnlock = false, bioDecoy = false }: Props) {
-  const { verifyPin } = usePro()
-  const [pin, setPin] = useState('')
+ *  After 5 wrong PINs there is a wait that doubles each time (up to 15 minutes).
+ *  A fingerprint or face check only ever unlocks the real app. If it fails or is cancelled, nothing opens. */
+export function PinGate({ onUnlock, onDecoy, title = 'Enter your PIN', subtitle = 'Chatter is locked', onCancel, bioUnlock = false }: Props) {
+  const { verifyPin, lockedUntil } = usePro()
+  const [pin, setPinState] = useState('')
+  // the latest digits, readable from key handlers without re-subscribing
+  const pinRef = useRef('')
+  const setPin = useCallback((v: string | ((p: string) => string)) => {
+    const next = typeof v === 'function' ? v(pinRef.current) : v
+    pinRef.current = next
+    setPinState(next)
+  }, [])
   const [error, setError] = useState(false)
   const [checking, setChecking] = useState(false)
   const [bioMsg, setBioMsg] = useState('')
+  const [now, setNow] = useState(Date.now())
   const busy = useRef(false)
   const startY = useRef<number | null>(null)
+  const waitMs = Math.max(0, lockedUntil - now)
 
-  const check = async (value: string) => {
+  // tick while a wait is running so the countdown updates
+  useEffect(() => {
+    if (lockedUntil <= Date.now()) return
+    const t = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(t)
+  }, [lockedUntil])
+
+  const check = useCallback(async (value: string) => {
     if (checking || value.length < 4) return
     setChecking(true)
     const r = await verifyPin(value)
-    if (r === 'real') onUnlock()
-    else if (r === 'decoy') onDecoy()
-    else {
-      setError(true)
-      setPin('')
-      setChecking(false)
-      window.setTimeout(() => setError(false), 1400)
-    }
-  }
+    if (r === 'real') return onUnlock()
+    if (r === 'decoy') return onDecoy()
+    setNow(Date.now())
+    setError(r === 'none')
+    setPin('')
+    setChecking(false)
+    if (r === 'none') window.setTimeout(() => setError(false), 1400)
+  }, [checking, verifyPin, onUnlock, onDecoy, setPin])
 
   const tryBio = async () => {
     if (busy.current) return
@@ -50,17 +65,28 @@ export function PinGate({ onUnlock, onDecoy, title = 'Enter your PIN', subtitle 
     busy.current = false
     if (r.ok) return onUnlock()
     if (r.error === 'not-enrolled') return setBioMsg('Set up fingerprint unlock in Settings first. Use your PIN for now.')
-    if (r.denied && bioDecoy) return onDecoy()
     setBioMsg(r.error ?? 'Not recognised. Use your PIN.')
   }
 
-  const press = (d: string) => {
-    if (checking || pin.length >= 6) return
-    const next = pin + d
+  const press = useCallback((d: string) => {
+    if (checking || waitMs > 0 || pinRef.current.length >= 6) return
+    const next = pinRef.current + d
     setPin(next)
     setError(false)
     if (next.length === 6) void check(next)
-  }
+  }, [checking, waitMs, check, setPin])
+
+  // physical keyboard: digits, Backspace, Enter, Escape
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (/^\d$/.test(e.key)) press(e.key)
+      else if (e.key === 'Backspace') setPin((p) => p.slice(0, -1))
+      else if (e.key === 'Enter') void check(pinRef.current)
+      else if (e.key === 'Escape' && onCancel) onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [press, check, onCancel, setPin])
 
   const keys = ['1', '2', '3', '4', '5', '6', '7', '8', '9', 'ok', '0', 'del']
 
@@ -79,20 +105,22 @@ export function PinGate({ onUnlock, onDecoy, title = 'Enter your PIN', subtitle 
         <p className="text-xl font-bold">{title}</p>
         <p className="mt-1 text-sm text-white/60">{subtitle}</p>
       </div>
-      <div className="flex gap-3" aria-live="polite">
+      <div className="flex gap-3" aria-hidden>
         {[0, 1, 2, 3, 4, 5].map((i) => (
           <span key={i} className={`h-3.5 w-3.5 rounded-full ring-1 transition ${error ? 'bg-rose-400 ring-rose-400' : `ring-[#7CF5C0]/60 ${i < pin.length ? 'bg-[#7CF5C0]' : ''}`}`} />
         ))}
       </div>
-      <p className={`h-4 text-xs ${error ? 'text-rose-400' : 'text-transparent'}`}>Incorrect PIN</p>
+      <p className={`h-4 text-xs ${error || waitMs > 0 ? 'text-rose-400' : 'text-transparent'}`} role="status" aria-live="polite">
+        {waitMs > 0 ? `Too many wrong PINs. Try again in ${fmtWait(waitMs)}.` : error ? 'Incorrect PIN' : ' '}
+      </p>
       <div className="grid grid-cols-3 gap-4">
         {keys.map((k) => (
           <button
             key={k}
             onClick={() => (k === 'del' ? setPin((p) => p.slice(0, -1)) : k === 'ok' ? void check(pin) : press(k))}
             aria-label={k === 'del' ? 'Delete' : k === 'ok' ? 'Unlock' : `Digit ${k}`}
-            disabled={k === 'ok' && pin.length < 4}
-            className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl font-semibold ring-1 transition active:scale-95 ${k === 'ok' ? 'bg-[#7CF5C0] text-black ring-[#7CF5C0] disabled:opacity-30' : 'bg-white/5 ring-white/10 hover:bg-white/10'}`}
+            disabled={waitMs > 0 || (k === 'ok' && pin.length < 4)}
+            className={`flex h-16 w-16 items-center justify-center rounded-full text-2xl font-semibold ring-1 transition active:scale-95 disabled:opacity-30 ${k === 'ok' ? 'bg-[#7CF5C0] text-black ring-[#7CF5C0]' : 'bg-white/5 ring-white/10 hover:bg-white/10'}`}
           >
             {k === 'del' ? <Delete size={20} /> : k === 'ok' ? <Check size={22} /> : k}
           </button>
@@ -100,8 +128,8 @@ export function PinGate({ onUnlock, onDecoy, title = 'Enter your PIN', subtitle 
       </div>
       {bioUnlock && (
         <button onClick={() => void tryBio()} className="flex flex-col items-center gap-1 text-xs text-white/70">
-          <Fingerprint size={26} className="animate-bounce text-[#7CF5C0]" />
-          <span>{bioMsg || 'Swipe up to use fingerprint or face'}</span>
+          <Fingerprint size={26} className="text-[#7CF5C0]" />
+          <span>{bioMsg || 'Tap or swipe up to use fingerprint or face'}</span>
         </button>
       )}
       {onCancel && <button onClick={onCancel} className="text-sm font-semibold text-white/70 hover:text-white">Cancel</button>}

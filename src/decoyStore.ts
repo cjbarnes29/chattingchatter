@@ -4,27 +4,33 @@ import type { Message } from './data'
 
 export type DecoyItem = { id: string; name: string; avatar: string; text: string; time: string; hidden?: boolean }
 
-const KEY = 'chatter.decoy.items.v1'
-const TKEY = 'chatter.decoy.threads.v1'
+const LEGACY_KEY = 'chatter.decoy.items.v1'
+const LEGACY_TKEY = 'chatter.decoy.threads.v1'
 const defaults = (): DecoyItem[] => DECOY_CHATS.map((c, i) => ({ ...c, time: ['09:12', '18:40', '11:05'][i] ?? '12:00' }))
 
-function read(): DecoyItem[] {
-  try {
-    const raw = localStorage.getItem(KEY)
-    return raw ? (JSON.parse(raw) as DecoyItem[]) : defaults()
-  } catch {
-    return defaults()
-  }
-}
+// Decoy chats belong to one account, so two people sharing a device never see each other's.
+let owner: string | null = null
+const KEY = () => `${LEGACY_KEY}.${owner ?? 'none'}`
+const TKEY = () => `${LEGACY_TKEY}.${owner ?? 'none'}`
 
-function readThreads(): Record<string, Message[]> {
+function readJson<T>(key: string, legacyKey: string, fallback: () => T): T {
   try {
-    const raw = localStorage.getItem(TKEY)
-    return raw ? (JSON.parse(raw) as Record<string, Message[]>) : {}
+    const raw = localStorage.getItem(key)
+    if (raw) return JSON.parse(raw) as T
+    // first run after this update: the device-wide decoys move to the account that opens them first
+    const legacy = localStorage.getItem(legacyKey)
+    if (legacy && owner) {
+      localStorage.setItem(key, legacy)
+      localStorage.removeItem(legacyKey)
+      return JSON.parse(legacy) as T
+    }
   } catch {
-    return {}
+    /* unreadable: start fresh */
   }
+  return fallback()
 }
+const read = () => readJson<DecoyItem[]>(KEY(), LEGACY_KEY, defaults)
+const readThreads = () => readJson<Record<string, Message[]>>(TKEY(), LEGACY_TKEY, () => ({}))
 
 let items = read()
 let threads = readThreads()
@@ -32,12 +38,21 @@ const subs = new Set<() => void>()
 const notify = () => subs.forEach((f) => f())
 const commit = (next: DecoyItem[]) => {
   items = next
-  try { localStorage.setItem(KEY, JSON.stringify(next)) } catch { /* ignore */ }
+  try { localStorage.setItem(KEY(), JSON.stringify(next)) } catch { /* ignore */ }
   notify()
 }
 const commitThreads = (next: Record<string, Message[]>) => {
   threads = next
-  try { localStorage.setItem(TKEY, JSON.stringify(next)) } catch { /* ignore */ }
+  try { localStorage.setItem(TKEY(), JSON.stringify(next)) } catch { /* ignore */ }
+  notify()
+}
+
+/** Switch to the signed-in account's decoy chats (call when the user changes). */
+export function setDecoyOwner(userId: string | null) {
+  if (userId === owner) return
+  owner = userId
+  items = read()
+  threads = readThreads()
   notify()
 }
 

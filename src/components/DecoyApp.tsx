@@ -6,6 +6,7 @@ import Settings from './Settings'
 import Upgrade from './Upgrade'
 import ContactsPanel from './ContactsPanel'
 import { usePro } from '../pro'
+import { limit } from '../entitlements'
 import { useAuth } from '../auth'
 import { addDecoy, sendDecoyMessage, useDecoyItems, useDecoyThreads } from '../decoyStore'
 import { useChatStyle, setLocalPin, DEFAULT_PIN } from '../chatStyle'
@@ -18,6 +19,7 @@ import { type Chat } from '../data'
 export default function DecoyApp() {
   const { user } = useAuth()
   const { isPro } = usePro()
+  const decoyMax = limit('decoyChats', isPro)
   const items = useDecoyItems()
   const threads = useDecoyThreads()
   const cs = useChatStyle()
@@ -33,7 +35,7 @@ export default function DecoyApp() {
     () =>
       items
         .filter((i) => !i.hidden)
-        .slice(0, isPro ? undefined : 1) // free plan: one decoy chat
+        .slice(0, Number.isFinite(decoyMax) ? decoyMax : undefined) // free plan: one decoy chat
         .map((i) => ({
           id: i.id,
           name: i.name,
@@ -46,7 +48,7 @@ export default function DecoyApp() {
           pinColor: cs.pinColors[i.id] ?? DEFAULT_PIN,
           messages: [{ id: `${i.id}-seed`, fromMe: false, text: i.text, time: i.time }, ...(threads[i.id] ?? [])],
         })),
-    [items, threads, cs.pins, cs.favs, cs.pinColors, isPro],
+    [items, threads, cs.pins, cs.favs, cs.pinColors, decoyMax],
   )
   const activeChat = chats.find((c) => c.id === activeId) ?? null
 
@@ -74,7 +76,7 @@ export default function DecoyApp() {
             onToggleDark={toggleDark}
             onOpenSettings={() => setSettingsOpen(true)}
             onUpgrade={() => setUpgradeOpen(true)}
-            onNewChat={() => (isPro || items.filter((i) => !i.hidden).length < 1 ? addDecoy() : setUpgradeOpen(true))}
+            onNewChat={() => (items.filter((i) => !i.hidden).length < decoyMax ? addDecoy() : setUpgradeOpen(true))}
             onOpenContacts={() => setContactsOpen(true)}
             showArchived={false}
             archivedCount={0}

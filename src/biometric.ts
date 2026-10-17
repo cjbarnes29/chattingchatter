@@ -1,4 +1,6 @@
-/** Real Face ID / Touch ID / fingerprint check using the device's built-in authenticator (WebAuthn). */
+/** Face ID / Touch ID / fingerprint check using the device's built-in authenticator (WebAuthn).
+ *  The phone does the check; Chatter never sees or stores fingerprint or face data. The result is used
+ *  on this device only (it unlocks the app lock), so it is as strong as the device's own screen lock. */
 const CRED = 'chatter.bio.cred'
 const ON = 'chatter.bio.on'
 
@@ -10,7 +12,7 @@ export const biometricEnabled = () => localStorage.getItem(ON) !== '0'
 export const setBiometricEnabled = (v: boolean) => localStorage.setItem(ON, v ? '1' : '0')
 export const biometricEnrolled = () => !!localStorage.getItem(CRED)
 
-/** Pro: swipe up on the lock screen to unlock with a fingerprint or face. Off by default. */
+/** Pro: unlock the lock screen with a fingerprint or face. Off by default. A failed check never opens anything. */
 const UNLOCK = 'chatter.bio.unlock'
 export const bioUnlockEnabled = () => localStorage.getItem(UNLOCK) === '1'
 export const setBioUnlockEnabled = (v: boolean) => localStorage.setItem(UNLOCK, v ? '1' : '0')
@@ -65,7 +67,12 @@ export async function verifyBiometric(): Promise<{ ok: boolean; error?: string; 
         timeout: 60000,
       },
     })
-    return r ? { ok: true } : { ok: false, error: 'Verification failed.', denied: true }
+    if (!r) return { ok: false, error: 'Verification failed.', denied: true }
+    // The authenticator sets the "user verified" flag (bit 2 of the flags byte) only after a real
+    // fingerprint, face or device-passcode check. Anything else is treated as a failure.
+    const data = new Uint8Array((r as PublicKeyCredential & { response: AuthenticatorAssertionResponse }).response.authenticatorData)
+    if (data.length < 33 || !(data[32] & 0x04)) return { ok: false, error: 'This device didn’t confirm it was you. Use your PIN instead.', denied: true }
+    return { ok: true }
   } catch (e) {
     // "NotAllowedError" = the phone did not accept this fingerprint / face (or it was cancelled)
     return { ok: false, error: explain(e), denied: (e as { name?: string })?.name === 'NotAllowedError' }

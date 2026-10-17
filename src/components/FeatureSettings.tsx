@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Bell, BellRing, Brush, CalendarDays, Camera, Check, Crown, Ghost, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { usePro } from '../pro'
+import { limit } from '../entitlements'
 import { useCalPrefs, useGhostPrefs, useGesturePrefs, INK_COLORS } from '../prefs'
 import { useDecoyItems, updateDecoy, removeDecoy, addDecoy, resetDecoys } from '../decoyStore'
 import { fileToAvatar } from '../edits'
@@ -104,7 +105,7 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
           </div>
         ))}
         <div className="flex items-center justify-between">
-          <button onClick={addDecoy} disabled={!pro.isPro && decoys.length >= 1} title={!pro.isPro && decoys.length >= 1 ? 'Chatter Pro needed for more than one decoy chat' : undefined} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--accent))] px-3 py-1.5 text-xs font-semibold text-[rgb(var(--accent-foreground))] disabled:opacity-40"><Plus size={13} /> Add decoy chat</button>
+          <button onClick={addDecoy} disabled={decoys.length >= limit('decoyChats', pro.isPro)} title={decoys.length >= limit('decoyChats', pro.isPro) ? 'Chatter Pro needed for more than one decoy chat' : undefined} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--accent))] px-3 py-1.5 text-xs font-semibold text-[rgb(var(--accent-foreground))] disabled:opacity-40"><Plus size={13} /> Add decoy chat</button>
           <button onClick={resetDecoys} className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))] hover:underline"><RotateCcw size={12} /> Reset</button>
         </div>
       </div>

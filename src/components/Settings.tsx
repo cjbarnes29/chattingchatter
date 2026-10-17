@@ -96,7 +96,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
     if (!v) {
       setBiometricEnabled(false)
       setBioOn(false)
-      return setBioMsg({ ok: true, text: 'Biometric lock is off. Private messages unlock with a tap.' })
+      return setBioMsg({ ok: true, text: 'Biometric check is off. Confidential chats will ask for your PIN instead.' })
     }
     const r = biometricEnrolled() ? await verifyBiometric() : await enrollBiometric(user.id, user.email ?? 'chatter')
     if (r.ok) {
@@ -284,7 +284,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
                     ))}
                   </div>
                 </div>
-                <Row icon={<Lock size={16} />} title="Biometric lock" desc="Require Face ID, Touch ID or passcode for locked chats">
+                <Row icon={<Lock size={16} />} title="Fingerprint for confidential chats" desc="Use Face ID, Touch ID or your phone passcode to open confidential chats (your PIN always works too)">
                   <Toggle on={bioOn} onChange={toggleBio} label="Biometric lock" />
                 </Row>
                 {bioMsg && <p role="status" className={`px-4 py-2 text-xs ${bioMsg.ok ? 'text-emerald-500' : 'text-rose-500'}`}>{bioMsg.text}</p>}

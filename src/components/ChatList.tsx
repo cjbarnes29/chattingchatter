@@ -1,4 +1,6 @@
-import { Star, Search, Pin, BellOff, Plus, MessageSquarePlus, Crown, Users, Archive, ArrowLeft, Sun, Moon, Home } from 'lucide-react'
+import { Star, Search, Pin, BellOff, Plus, MessageSquarePlus, Crown, Users, Archive, ArrowLeft, Sun, Moon, Home, Lock } from 'lucide-react'
+import { usePro } from '../pro'
+import { requestLock } from '../appLock'
 import type { Chat } from '../data'
 import { useAuth } from '../auth'
 import { useRef, useState } from 'react'
@@ -88,6 +90,8 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
   const { user } = useAuth()
   const ap = useAppearance()
   const ui = useInterface()
+  const { lockedChatIds, hasPins } = usePro()
+  const isLocked = (id: string) => lockedChatIds.includes(id)
   const [tab, setTab] = useState<TabId | 'home'>(() => (ui.tabs.includes(ui.defaultTab) ? ui.defaultTab : 'all'))
   const edits = useEdits()
   const chats = rawChats.map((c) => {
@@ -142,6 +146,12 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
             <Archive size={20} />
           </button>
         )
+      case 'lock':
+        return hasPins ? (
+          <button key={id} aria-label="Lock Chatter now" title="Lock now" onClick={requestLock} className={iconBtn}>
+            <Lock size={20} />
+          </button>
+        ) : null
     }
   }
 
@@ -293,7 +303,11 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
                           </div>
                           <div className={`flex items-center gap-2 ${ui.preview === 0 ? '' : 'mt-0.5'}`}>
                             {ui.preview > 0 && (
-                              <p className={`text-sm text-[rgb(var(--text-secondary))] ${ui.preview === 2 ? 'line-clamp-2 break-words' : 'truncate'}`}>{lastMessage(chat)}</p>
+                              isLocked(chat.id) ? (
+                                <p className="flex items-center gap-1 truncate text-sm italic text-[rgb(var(--text-secondary))]"><Lock size={12} className="shrink-0" /> Locked chat</p>
+                              ) : (
+                                <p className={`text-sm text-[rgb(var(--text-secondary))] ${ui.preview === 2 ? 'line-clamp-2 break-words' : 'truncate'}`}>{lastMessage(chat)}</p>
+                              )
                             )}
                             <div className="ml-auto flex shrink-0 items-center gap-1.5">
                               {chat.favorite && <Star size={13} className="fill-amber-400 text-amber-400" />}

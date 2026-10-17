@@ -8,6 +8,7 @@ import ResetPassword from './components/ResetPassword'
 import Settings from './components/Settings'
 import { AuthProvider, useAuth } from './auth'
 import { ProProvider, usePro } from './pro'
+import { inFocusWindow } from './focusWindow'
 import { PinGate } from './components/PinGate'
 import DecoyApp from './components/DecoyApp'
 import ExitDialog from './components/ExitDialog'
@@ -28,11 +29,13 @@ import { StoriesRow, StoryComposer, StoryViewer } from './components/Stories'
 import CallOverlay from './components/CallOverlay'
 import { useContacts, findRegisteredByEmails, pickPhoneContacts } from './contacts'
 import ContactsPanel from './components/ContactsPanel'
-import { Archive, BellRing, X } from 'lucide-react'
+import { Archive, BellRing, X, ShieldAlert } from 'lucide-react'
 import { useEvents, fmtWhen, remindLabel } from './calendar'
 import { useChatStyle, setLocalPin, playSound, DEFAULT_PIN } from './chatStyle'
 import { useIsDark, toggleDark, startInterfaceSync, useInterface } from './interface'
 import Dashboard from './components/Dashboard'
+import { onLockRequest, forgetOpenedChats } from './appLock'
+import { setDecoyOwner } from './decoyStore'
 
 export default function Root() {
   return (
@@ -46,18 +49,41 @@ export default function Root() {
 
 function Gate() {
   const { user, recovering } = useAuth()
-  const { hasPins, isPro, decoyPinHash } = usePro()
+  const { hasPins, isPro, autoLock, takeIntrusions } = usePro()
   const bioUnlock = isPro && bioUnlockEnabled() && biometricEnrolled()
-  const [unlocked, setUnlocked] = useState<'none' | 'real' | 'decoy'>('none')
+  const [unlocked, setUnlockedState] = useState<'none' | 'real' | 'decoy'>('none')
+  const [intrusions, setIntrusions] = useState<number[]>([])
   const [exitOpen, setExitOpen] = useState(false)
   useBackTrap(() => setExitOpen(true))
-
-  // Re-lock whenever the app goes to the background, so the PIN is asked again on return
-  useEffect(() => {
-    const onHide = () => { if (document.visibilityState === 'hidden') setUnlocked('none') }
-    document.addEventListener('visibilitychange', onHide)
-    return () => document.removeEventListener('visibilitychange', onHide)
+  const setUnlocked = useCallback((v: 'none' | 'real' | 'decoy') => {
+    if (v === 'none') forgetOpenedChats()
+    setUnlockedState(v)
   }, [])
+  // decoy chats are kept per account
+  useEffect(() => setDecoyOwner(user?.id ?? null), [user?.id])
+  const unlockReal = () => {
+    setIntrusions(takeIntrusions())
+    setUnlocked('real')
+  }
+
+  // Lock when the app goes to the background: straight away, or after the chosen auto-lock time
+  useEffect(() => {
+    let hiddenAt = 0
+    const onVis = () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenAt = Date.now()
+        if (autoLock === 0) setUnlocked('none')
+        forgetOpenedChats()
+      } else if (hiddenAt && Date.now() - hiddenAt >= autoLock * 1000) {
+        setUnlocked('none')
+      }
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [autoLock, setUnlocked])
+
+  // "Lock now" from the inbox shortcut or anywhere else
+  useEffect(() => onLockRequest(() => setUnlocked('none')), [setUnlocked])
 
   // Shake the phone to lock (needs a PIN and the "Shake to lock" gesture turned on)
   useEffect(() => {
@@ -78,7 +104,7 @@ function Gate() {
     }
     window.addEventListener('devicemotion', onMotion)
     return () => window.removeEventListener('devicemotion', onMotion)
-  }, [hasPins])
+  }, [hasPins, setUnlocked])
 
   let body: React.ReactNode
   const onTermsPage = window.location.pathname.replace(/\/+$/, '') === '/terms'
@@ -86,13 +112,23 @@ function Gate() {
   else if (recovering) body = <ResetPassword />
   else if (!user) body = <AuthScreen />
   // The lock is enforced whenever a PIN exists, even if the Pro plan has lapsed
-  else if (hasPins && unlocked === 'none') body = <PinGate onUnlock={() => setUnlocked('real')} onDecoy={() => setUnlocked('decoy')} bioUnlock={bioUnlock} bioDecoy={!!decoyPinHash} />
+  else if (hasPins && unlocked === 'none') body = <PinGate onUnlock={unlockReal} onDecoy={() => setUnlocked('decoy')} bioUnlock={bioUnlock} />
   else if (unlocked === 'decoy' && hasPins) body = <DecoyApp />
   else body = <App />
 
   return (
     <>
       {body}
+      {unlocked === 'real' && intrusions.length > 0 && (
+        <div role="alert" className="fixed inset-x-3 top-3 z-[80] mx-auto flex max-w-md items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel))] p-4 shadow-2xl ring-2 ring-rose-500">
+          <ShieldAlert size={20} className="mt-0.5 shrink-0 text-rose-500" />
+          <div className="min-w-0 flex-1 text-sm">
+            <p className="font-bold">{intrusions.length} wrong PIN{intrusions.length === 1 ? ' was' : 's were'} tried</p>
+            <p className="text-xs text-[rgb(var(--text-secondary))]">Since you last unlocked. Most recent: {new Date(intrusions[intrusions.length - 1]).toLocaleString([], { weekday: 'short', hour: '2-digit', minute: '2-digit' })}.</p>
+          </div>
+          <button onClick={() => setIntrusions([])} aria-label="Dismiss" className="rounded-full p-1 hover:bg-[rgb(var(--accent-soft))]"><X size={14} /></button>
+        </div>
+      )}
       {exitOpen && <ExitDialog onStay={() => setExitOpen(false)} onExit={() => void exitApp()} />}
     </>
   )
@@ -172,7 +208,8 @@ function App() {
       if (!last) continue
       if (!first && seen.current[c.id] !== undefined && seen.current[c.id] !== last.id && !last.fromMe && !c.muted) {
         playSound(c.id)
-        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews ? last.text : 'New message' })
+        // confidential chats never show their text outside the chat
+        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews && !lockedChatIds.includes(c.id) ? last.text : 'New message' })
       }
       seen.current[c.id] = last.id
     }
@@ -184,24 +221,20 @@ function App() {
   const ui = useInterface()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
-  const { isPro, focus } = usePro()
-  const now = new Date()
-  const dayIdx = (now.getDay() + 6) % 7
-  const inFocus =
-    isPro &&
-    focus.enabled &&
-    (focus.meetingMode ||
-      (focus.days[dayIdx] && now.getHours() >= focus.startHour && now.getHours() < focus.endHour))
+  const { isPro, focus, lockedChatIds } = usePro()
+  const inFocus = isPro && inFocusWindow(focus)
   const [notice, setNotice] = useState<{ chatId: string; text: string } | null>(null)
+  // favourites can still get through during focus, if the user allows it
+  const noticeBypassesFocus = !!notice && focus.allowFavorites && !!chats.find((c) => c.id === notice.chatId)?.favorite
 
   // Focus scheduling: while active, the notification is bundled instead of interrupting
   const [bundled, setBundled] = useState(0)
   useEffect(() => {
-    if (inFocus && notice) {
+    if (inFocus && notice && !noticeBypassesFocus) {
       setBundled((b) => b + 1)
       setNotice(null)
     }
-  }, [inFocus, notice])
+  }, [inFocus, notice, noticeBypassesFocus])
 
 
   const typingPeer = activeId && activeId.startsWith(REAL_PREFIX) ? activeId.slice(REAL_PREFIX.length) : null
@@ -362,7 +395,7 @@ function App() {
           ))}
         </div>
       )}
-      {notice && noticeChat && !inFocus && (
+      {notice && noticeChat && (!inFocus || noticeBypassesFocus) && (
         <NotificationPanel
           name={noticeChat.name}
           avatar={noticeChat.avatar}
@@ -542,6 +575,7 @@ function App() {
               }
               onPinChat={(v) => pinAny(activeChat.id, v)}
               chatActions={activeChatActions}
+              allowLock
               calendar={calendarProps}
             />
           ) : dashboard ? (
