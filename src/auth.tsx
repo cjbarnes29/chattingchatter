@@ -17,7 +17,7 @@ export type User = {
 
 type ProfileRow = { name: string; avatar: string | null; about: string; nickname: string | null; age: number | null; status: string | null; presence_mode: string | null }
 
-type Result = { ok: true; needsConfirm?: boolean } | { ok: false; error: string; unconfirmed?: boolean }
+type Result = { ok: true; needsConfirm?: boolean; existing?: boolean } | { ok: false; error: string; unconfirmed?: boolean }
 
 type AuthState = {
   user: User | null
@@ -176,8 +176,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       options: { data: { name: name.trim() }, emailRedirectTo: appRedirectUrl() },
     })
     if (error) return { ok: false, error: friendlyError(error.message) }
-    if (data.user && data.user.identities && data.user.identities.length === 0)
-      return { ok: false, error: 'This email is already registered. Sign in instead.' }
+    // An existing account comes back with no identities. It may simply never have been confirmed,
+    // so send a fresh code and let the person confirm it instead of dead-ending them.
+    if (data.user && data.user.identities && data.user.identities.length === 0) {
+      await supabase.auth.resend({ type: 'signup', email })
+      return { ok: true, needsConfirm: true, existing: true }
+    }
     return { ok: true, needsConfirm: !data.session }
   }, [])
 

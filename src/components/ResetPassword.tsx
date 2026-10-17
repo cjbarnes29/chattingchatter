@@ -50,7 +50,7 @@ export default function ResetPassword({ onBack }: { onBack?: () => void }) {
     if (!r.ok) return setError(r.error)
     setStep('code')
     setCooldown(RESEND_SECONDS)
-    setInfo(`If an account exists for ${email}, an 8-digit code is on its way.`)
+    setInfo(`If an account exists for ${email}, a code is on its way.`)
   }
 
   const verify = async (value: string) => {
