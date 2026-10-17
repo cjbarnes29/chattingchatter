@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Brush, StickyNote, Sticker, Gamepad2, X, Fingerprint, Pin, ShieldCheck, Crown, Lock, Film, Calendar, Save, Maximize2, Minus, Plus } from 'lucide-react'
 import { Undo2, Redo2, Send, Eraser, Hand, PenLine } from 'lucide-react'
 import { usePro } from '../pro'
@@ -7,6 +7,8 @@ import { supabase } from '../supabase'
 import { REAL_PREFIX } from '../realChats'
 import { readGhostPrefs } from '../prefs'
 import CalendarPanel from './CalendarPanel'
+import GhostWaiting from './GhostWaiting'
+import { CONNECT_TIMEOUT, INVITE_COOLDOWN, INVITE_TEXT, PEER_LEFT_DELAY, elapsedSecs, graceRuns, initialSession, inviteWait, reduce, viewOf, wipeOnLeave } from '../ghostSession'
 import { drawStroke, strokeHits, type Brush as BrushId, type Stroke } from '../canvasDraw'
 import type { CalEvent } from '../calendar'
 
@@ -52,7 +54,14 @@ type CalendarApi = {
   onDelete: (id: string) => void
 }
 
-export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade, calendar }: { friend: string; chatId: string; onSend?: (chatId: string, text: string) => void; onExit: () => void; onUpgrade: () => void; calendar?: CalendarApi }) {
+export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanvas, onUpgrade, calendar }: { friend: string; chatId: string; onSend?: (chatId: string, text: string) => void; onExit: () => void; onUpgrade: () => void; calendar?: CalendarApi }) {
+  // Every way out goes through here, so a canvas closes exactly once even when "app lost focus" and "tab hidden" arrive together
+  const closed = useRef(false)
+  const onExit = useCallback(() => {
+    if (closed.current) return
+    closed.current = true
+    closeCanvas()
+  }, [closeCanvas])
   const pro = usePro()
   const { user } = useAuth()
   const G = useMemo(() => readGhostPrefs(), [])
@@ -63,7 +72,16 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
   const LIFE = lifeSec * 1000
   const [myColor, setMyColor] = useState(G.ink)
   const [width, setWidth] = useState(G.inkWidth)
-  const [peerOnline, setPeerOnline] = useState(false)
+  // connection + other-person state (see ghostSession.ts); `now` ticks only while waiting
+  const [session, dispatch] = useReducer(reduce, undefined, () => initialSession(Date.now()))
+  const [now, setNow] = useState(() => Date.now())
+  const [attempt, setAttempt] = useState(0)
+  const peerOnline = session.peer === 'present'
+  const sessionRef = useRef(session)
+  sessionRef.current = session
+  const contentRef = useRef(false)
+  const lastInvite = useRef(0)
+  const peerGoneTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null)
   const [turn, setTurn] = useState<'X' | 'O'>('X')
   const [turn4, setTurn4] = useState<'X' | 'O'>('X')
@@ -125,6 +143,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
   const full = board.every(Boolean)
   const c4win = c4Winner(c4)
   const c4full = c4.every(Boolean)
+  contentRef.current = notes.length > 0 || stickers.length > 0 || board.some(Boolean) || c4.some(Boolean)
 
   const toWorld = (cx: number, cy: number): [number, number] => {
     const v = viewRef.current
@@ -134,8 +153,10 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
   useEffect(() => { const t = setTimeout(() => setPhase('live'), 1500); return () => clearTimeout(t) }, [])
 
   useEffect(() => {
-    const out = () => G.exitOnLeave && onExit()
-    const vis = () => G.exitOnLeave && document.hidden && onExit()
+    // "Close when I leave" protects what's on the canvas; an empty canvas you're waiting on can be left and returned to
+    const leave = () => { if (wipeOnLeave(G.exitOnLeave, sessionRef.current, strokes.current.length > 0 || contentRef.current)) onExit() }
+    const out = leave
+    const vis = () => { if (document.hidden) leave() }
     const key = (e: KeyboardEvent) => e.key === 'Escape' && onExit()
     window.addEventListener('blur', out)
     document.addEventListener('visibilitychange', vis)
@@ -147,12 +168,29 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
     }
   }, [onExit, G])
 
+  // The hold-to-stay countdown only runs when the other person is here (or on the solo demo canvas).
+  // Waiting alone never counts down, and when they (re)join the countdown starts fresh so a stale one can't close the canvas.
+  const graceOn = graceRuns(!!room, session)
   useEffect(() => {
-    if (phase !== 'live' || held || pinned || wasHeld.current) return
+    if (peerOnline) {
+      wasHeld.current = false
+      setGrace(G.grace)
+    }
+  }, [peerOnline, G.grace])
+  useEffect(() => {
+    if (phase !== 'live' || held || pinned || wasHeld.current || !graceOn) return
     if (grace <= 0) { onExit(); return }
     const t = setTimeout(() => setGrace((g) => g - 1), 1000)
     return () => clearTimeout(t)
-  }, [phase, held, pinned, grace, onExit])
+  }, [phase, held, pinned, grace, onExit, graceOn])
+
+  // tick once a second while waiting so the elapsed time and invite cooldown stay current
+  useEffect(() => {
+    if (!room || phase !== 'live' || (session.peer === 'present' && session.link === 'online')) return
+    setNow(Date.now())
+    const t = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(t)
+  }, [room, phase, session.peer, session.link])
 
   // render loop (infinite canvas: world coords transformed by view)
   useEffect(() => {
@@ -214,19 +252,34 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
     setTimeout(() => setNotes((n) => n.filter((k) => k.id !== id)), life)
     if (share) chan.current?.send({ type: 'broadcast', event: 'note', payload: { x, y, text, life } })
   }, [LIFE])
+  // the channel below must not restart when the ink lifetime changes, so it reads dropNote through a ref
+  const dropNoteRef = useRef(dropNote)
+  dropNoteRef.current = dropNote
 
   // live room: strokes, notes, collage, games and cursors travel over a realtime channel
   useEffect(() => {
     if (!room) return
     const ch = supabase.channel(`ghost:${room}`, { config: { presence: { key: myId } } })
     chan.current = ch
+    let dead = false
+    const timers: ReturnType<typeof setTimeout>[] = []
+    peersSeen.current = new Set()
     const sync = () => {
+      if (dead) return
       const others = Object.keys(ch.presenceState()).filter((k) => k !== myId)
-      setPeerOnline(others.length > 0)
-      // someone new arrived: send them the current game and collage so they don't start from a blank board
+      if (others.length > 0) {
+        clearTimeout(peerGoneTimer.current)
+        dispatch({ type: 'peerJoined' })
+      } else if (sessionRef.current.peer === 'present') {
+        // short drops are normal (e.g. a phone changing network), so only say they left if they stay gone
+        clearTimeout(peerGoneTimer.current)
+        peerGoneTimer.current = setTimeout(() => dispatch({ type: 'peerLeft', at: Date.now() }), PEER_LEFT_DELAY)
+      }
+      // forget people who left, so they get the current game and collage again when they come back
+      for (const k of [...peersSeen.current]) if (!others.includes(k)) peersSeen.current.delete(k)
       if (others.some((k) => !peersSeen.current.has(k))) {
         others.forEach((k) => peersSeen.current.add(k))
-        setTimeout(() => stateRef.current(), 300)
+        timers.push(setTimeout(() => stateRef.current(), 300))
       }
     }
     ch.on('presence', { event: 'sync' }, sync)
@@ -243,14 +296,33 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
       clearTimeout(cursorTimer.current)
       cursorTimer.current = setTimeout(() => setCursor(null), 2500)
     })
-    ch.on('broadcast', { event: 'note' }, ({ payload: p }) => dropNote(p.x, p.y, p.text, false, p.life))
+    ch.on('broadcast', { event: 'note' }, ({ payload: p }) => dropNoteRef.current(p.x, p.y, p.text, false, p.life))
     ch.on('broadcast', { event: 'sticker' }, ({ payload: p }) => setStickers((all) => (all.some((s) => s.id === p.id) ? all.map((s) => (s.id === p.id ? { ...s, x: p.x, y: p.y } : s)) : [...all, p])))
     ch.on('broadcast', { event: 'ttt' }, ({ payload: p }) => { setBoard(p.cells); setTurn(p.turn) })
     ch.on('broadcast', { event: 'c4' }, ({ payload: p }) => { setC4(p.cells); setTurn4(p.turn) })
     ch.on('broadcast', { event: 'game' }, ({ payload: p }) => setGame(p.game))
-    ch.subscribe((s) => { if (s === 'SUBSCRIBED') ch.track({ at: Date.now() }) })
-    return () => { chan.current = null; supabase.removeChannel(ch) }
-  }, [room, myId, dropNote])
+    // If the live channel never comes up, say so (recoverable: Retry or Exit). This never closes the canvas.
+    const watchdog = setTimeout(() => { if (!dead) dispatch({ type: 'linkDown' }) }, CONNECT_TIMEOUT * 1000)
+    ch.subscribe((status) => {
+      if (dead) return
+      if (status === 'SUBSCRIBED') {
+        clearTimeout(watchdog)
+        dispatch({ type: 'linkUp' })
+        ch.track({ at: Date.now() })
+      } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+        clearTimeout(watchdog)
+        dispatch({ type: 'linkDown' })
+      }
+    })
+    return () => {
+      dead = true
+      clearTimeout(watchdog)
+      clearTimeout(peerGoneTimer.current)
+      timers.forEach(clearTimeout)
+      chan.current = null
+      supabase.removeChannel(ch)
+    }
+  }, [room, myId, attempt])
 
   // simulated friend — only on sample chats with no real person (can be switched off in Settings)
   useEffect(() => {
@@ -397,6 +469,28 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
     emit('stroke', { id: again.id, pt: again.pts[0], color: again.color, brush: again.brush, w: again.w, life: again.life, opacity: again.opacity })
     emit('pts', { id: again.id, pts: again.pts.slice(1) })
   }
+  // Invite = a normal chat message asking them to open Ghost Canvas (there is no separate invitation record).
+  // The cooldown is kept in a ref so a double-click in one tick can't send two.
+  const invite = () => {
+    if (!onSend || Date.now() - lastInvite.current < INVITE_COOLDOWN * 1000) return
+    lastInvite.current = Date.now()
+    onSend(chatId, INVITE_TEXT)
+    dispatch({ type: 'invited', at: Date.now() })
+    setNow(Date.now())
+  }
+  const retry = () => {
+    if (sessionRef.current.link === 'connecting') return
+    dispatch({ type: 'retry' })
+    setAttempt((a) => a + 1) // re-runs the channel effect, which closes the old channel first
+  }
+  const releaseHold = () => {
+    setHeld(false)
+    if (pinned) return
+    // alone in a live room there is nobody to protect the canvas from, so letting go isn't "leaving"
+    if (room && session.peer !== 'present') { wasHeld.current = false; return }
+    onExit()
+  }
+
   const sendChat = (e: React.FormEvent) => {
     e.preventDefault()
     const t = chatDraft.trim()
@@ -523,7 +617,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
           <p className="text-sm font-semibold">Ghost Canvas · {friend}</p>
           <p className="flex items-center gap-1.5 text-[11px] text-white/55">
             {phase !== 'live' ? 'Connecting…' : room ? (
-              <><span className={`inline-block h-1.5 w-1.5 rounded-full ${peerOnline ? 'bg-[#7CF5C0] shadow-[0_0_8px_#7CF5C0]' : 'bg-white/30'}`} />{peerOnline ? `${friend} is here · live` : `Waiting for ${friend} to open the canvas`} · vanishes in {lifeSec}s</>
+              <><span className={`inline-block h-1.5 w-1.5 rounded-full ${session.link === 'failed' ? 'bg-rose-400' : peerOnline ? 'bg-[#7CF5C0] shadow-[0_0_8px_#7CF5C0]' : 'bg-white/30'}`} />{session.link === 'failed' ? 'Connection problem' : session.link === 'connecting' ? 'Connecting…' : peerOnline ? `${friend} is here · live` : session.peer === 'away' ? `${friend} disconnected · canvas kept` : `Waiting for ${friend} to open the canvas`} · vanishes in {lifeSec}s</>
             ) : `Demo canvas (sample chat) · vanishes in ${lifeSec}s`}
           </p>
         </div>
@@ -570,6 +664,21 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
             onWheel={onWheel}
           >
             <canvas ref={canvas} className="absolute inset-0 h-full w-full" />
+            {room && (
+              <GhostWaiting
+                view={viewOf(session, now)}
+                peer={session.peer}
+                elapsed={elapsedSecs(session, now)}
+                inviteWait={inviteWait(session, now)}
+                invited={session.invitedAt !== null}
+                willWipeOnLeave={G.exitOnLeave && (strokes.current.length > 0 || contentRef.current)}
+                onKeepWaiting={() => dispatch({ type: 'keepWaiting' })}
+                onReopen={() => dispatch({ type: 'reopen' })}
+                onInvite={invite}
+                onRetry={retry}
+                onExit={onExit}
+              />
+            )}
             <div className="pointer-events-none absolute inset-0 origin-top-left" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.z})` }}>
               {notes.map((n) => (
                 <span key={n.id} className="absolute -translate-x-1/2 -translate-y-1/2 rounded-md px-2.5 py-1 text-sm font-medium shadow-lg" style={{ left: n.x, top: n.y, animation: `ghostDissolve ${n.life}ms linear forwards`, background: n.mine ? myColor : THEIRS, color: '#0B1210', rotate: `${(n.id % 5) - 2}deg` }}>
@@ -711,7 +820,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
 
           {onSend && (
             <form onSubmit={sendChat} className="relative z-10 mx-auto flex w-full max-w-md items-center gap-2 px-4 pb-2">
-              <input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} placeholder="Send a chat message (saved in the chat, not ghosted)" aria-label="Chat message, saved in the chat" className="min-w-0 flex-1 rounded-full bg-white/10 px-4 py-2 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
+              <input value={chatDraft} onChange={(e) => setChatDraft(e.target.value)} placeholder="Message (saved in the chat)" aria-label="Chat message, saved in the chat" className="min-w-0 flex-1 rounded-full bg-white/10 px-4 py-2 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
               <button type="submit" aria-label="Send message" className="rounded-full bg-[#7CF5C0] p-2 text-black"><Send size={14} /></button>
             </form>
           )}
@@ -725,12 +834,12 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit, onUpgrade,
             </div>
             <button
               onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); wasHeld.current = true; setHeld(true) }}
-              onPointerUp={() => { setHeld(false); if (!pinned) onExit() }}
-              onPointerCancel={() => { setHeld(false); if (!pinned) onExit() }}
+              onPointerUp={releaseHold}
+              onPointerCancel={releaseHold}
               className={`flex h-14 items-center gap-2 rounded-full px-5 text-xs font-semibold ring-1 transition ${held || pinned ? 'bg-[#7CF5C0]/20 text-[#7CF5C0] ring-[#7CF5C0]' : 'text-white ring-white/30'}`}
             >
               <Fingerprint size={22} />
-              <span>{held || pinned ? 'Canvas alive' : wasHeld.current ? 'Hold to stay' : `Hold to stay · ${grace}s`}</span>
+              <span>{held || pinned ? 'Canvas alive' : !graceOn || wasHeld.current ? 'Hold to stay' : `Hold to stay · ${grace}s`}</span>
             </button>
           </div>
         </>
