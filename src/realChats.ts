@@ -127,6 +127,17 @@ export function useRealChats(myId: string) {
     }
   }, [openPeer, rows, myId])
 
+  /** pull-to-refresh: reload the conversation list from the server */
+  const refresh = useCallback(async () => {
+    const { data, error } = await supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(1000)
+    if (error || !data) return
+    const lr = localRead()
+    const at = new Date().toISOString()
+    const list = (data as Row[]).map((r) => (lr.has(r.id) && !r.read_at ? { ...r, read_at: at } : r))
+    setRows(list)
+    await ensurePeers([...new Set(list.map((r) => (r.sender_id === myId ? r.recipient_id : r.sender_id)))])
+  }, [myId, ensurePeers])
+
   const chats: Chat[] = useMemo(() => {
     const ids = new Set<string>(Object.keys(peers))
     rows.forEach((r) => ids.add(r.sender_id === myId ? r.recipient_id : r.sender_id))
@@ -184,5 +195,5 @@ export function useRealChats(myId: string) {
     return { ok: true, chatId: REAL_PREFIX + found.id }
   }, [])
 
-  return { chats, loaded, send, startChat, setOpenPeer }
+  return { chats, loaded, send, startChat, setOpenPeer, refresh }
 }

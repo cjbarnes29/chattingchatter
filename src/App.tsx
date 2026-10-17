@@ -14,6 +14,7 @@ import DecoyApp from './components/DecoyApp'
 import ExitDialog from './components/ExitDialog'
 import GroupCallOverlay from './components/GroupCallOverlay'
 import { useInboxPrivacy, readInboxPrivacy } from './inboxPrivacy'
+import { useOnline } from './online'
 import { isNative, Device } from './native'
 import { useBackTrap, useBackHandler, exitApp } from './backNav'
 import { bioUnlockEnabled, biometricEnrolled } from './biometric'
@@ -35,7 +36,7 @@ import { useGhostInvites, type GhostNotify } from './ghostInvites'
 import { readGhostPrefs } from './prefs'
 import { useContacts, findRegisteredByEmails, pickPhoneContacts } from './contacts'
 import ContactsPanel from './components/ContactsPanel'
-import { Archive, BellRing, X, ShieldAlert } from 'lucide-react'
+import { BellRing, X, ShieldAlert } from 'lucide-react'
 import { useEvents, fmtWhen, remindLabel } from './calendar'
 import { useChatStyle, setLocalPin, playSound, DEFAULT_PIN } from './chatStyle'
 import { useIsDark, toggleDark, startInterfaceSync, useInterface } from './interface'
@@ -202,6 +203,7 @@ function App() {
   const contactApi = useContacts(user!.id)
   const [contactsOpen, setContactsOpen] = useState(false)
   const [callMin, setCallMin] = useState(false)
+  const online = useOnline()
   const inboxPrivacy = useInboxPrivacy(user!.id)
   const [inBackground, setInBackground] = useState(false)
   const [gcallMin, setGcallMin] = useState(false)
@@ -415,6 +417,9 @@ function App() {
       .map((c): Chat => ({ id: REAL_PREFIX + c.id, name: c.name, avatar: c.avatar, online: false, unread: 0, messages: [] }))
     return [...chatsOnly, ...extra]
   }, [real.chats, contactApi.contacts])
+  const refreshAll = async () => {
+    await Promise.allSettled([real.refresh(), groupApi.reload(), contactApi.reload()])
+  }
   const inviteToGhost = async (chatId: string, notify: GhostNotify) => ghost.invite(chatId.slice(REAL_PREFIX.length), notify)
   // when the invited person says yes, both sides land in that conversation and its canvas opens
   const ghostActivePeer = ghost.active ? ghost.peerId : null
@@ -460,6 +465,11 @@ function App() {
   return (
     <div className="safe-shell flex w-full overflow-hidden bg-[rgb(var(--bg-app))]">
       {inboxPrivacy.shieldOnLeave && inBackground && <div aria-hidden className="fixed inset-0 z-[200] bg-[rgb(var(--bg-app))]" />}
+      {!online && (
+        <div role="status" className="pointer-events-none fixed left-1/2 top-[calc(var(--sat)+0.25rem)] z-[90] -translate-x-1/2 rounded-full bg-[rgb(var(--text-primary))] px-3 py-1 text-xs font-semibold text-[rgb(var(--bg-panel))] shadow-lg">
+          Offline · messages can’t send or arrive until you reconnect
+        </div>
+      )}
       {inFocus && (
         <div className="pointer-events-none fixed left-1/2 top-[calc(var(--sat)+0.75rem)] z-40 -translate-x-1/2 rounded-full bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs font-semibold shadow-lg ring-1 ring-[rgb(var(--accent))]">
           Focus mode on{bundled ? ` · ${bundled} notification${bundled > 1 ? 's' : ''} bundled` : ''}
@@ -498,6 +508,7 @@ function App() {
             onQuery={setQuery}
             onSelect={openChat}
             inboxPrivacy={inboxPrivacy}
+            onRefresh={refreshAll}
             dark={dark}
             onToggleDark={toggleDark}
             onOpenSettings={() => setSettingsOpen(true)}

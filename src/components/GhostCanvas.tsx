@@ -626,7 +626,6 @@ export default function GhostCanvas({ friend, chatId, sessionId, onSend, onExit:
   ]
 
   const showC4 = game === 'connect4'
-  const cols = 3, rows = 3
 
   return (
     <div className="ghost-root absolute inset-0 z-30 flex flex-col overflow-hidden bg-[#0B1210] text-white select-none touch-none">

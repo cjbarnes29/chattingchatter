@@ -387,7 +387,7 @@ export function useCall(myId: string) {
   const [state, setState] = useState<CallState>('idle')
   const [media, setMedia] = useState<CallMedia>('voice')
   const [peerId, setPeerId] = useState<string | null>(null)
-  const [callId, setCallId] = useState<string | null>(null)
+  const [, setCallId] = useState<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [muted, setMuted] = useState(false)

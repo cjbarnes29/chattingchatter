@@ -37,6 +37,8 @@ type Props = {
   dashboard?: React.ReactNode
   /** real-account inbox privacy options (never passed in the decoy profile) */
   inboxPrivacy?: InboxPrivacy
+  /** pull the list down (or press the refresh button) to reload from the server */
+  onRefresh?: () => Promise<void>
 }
 
 const DENSITY: Record<Density, { row: string; avatar: string; name: string }> = {
@@ -91,7 +93,31 @@ function SwipeRow({ chat, enabled, archived, onPin, onArchive, children }: { cha
   )
 }
 
-export default function ChatList({ chats: rawChats, activeId, query, onQuery, onSelect, dark, onToggleDark, onOpenSettings, onUpgrade, onNewChat, onOpenContacts, showArchived, archivedCount, onToggleArchived, isPro, stories, onNewGroup, onPinChat, onArchiveChat, dashboard, selfAvatar, inboxPrivacy }: Props) {
+export default function ChatList({ chats: rawChats, activeId, query, onQuery, onSelect, dark, onToggleDark, onOpenSettings, onUpgrade, onNewChat, onOpenContacts, showArchived, archivedCount, onToggleArchived, isPro, stories, onNewGroup, onPinChat, onArchiveChat, dashboard, selfAvatar, inboxPrivacy, onRefresh }: Props) {
+  const [pull, setPull] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const pullStart = useRef<number | null>(null)
+  const PULL_TRIGGER = 64
+  const doRefresh = async () => {
+    if (!onRefresh || refreshing) return
+    setRefreshing(true)
+    try { await onRefresh() } finally { setRefreshing(false); setPull(0) }
+  }
+  const onPullStart = (e: React.TouchEvent<HTMLElement>) => {
+    pullStart.current = e.currentTarget.scrollTop <= 0 ? e.touches[0].clientY : null
+  }
+  const onPullMove = (e: React.TouchEvent<HTMLElement>) => {
+    if (pullStart.current === null || !onRefresh) return
+    const dy = e.touches[0].clientY - pullStart.current
+    if (dy > 0 && e.currentTarget.scrollTop <= 0) setPull(Math.min(PULL_TRIGGER + 16, dy * 0.5))
+    else setPull(0)
+  }
+  const onPullEnd = () => {
+    const go = pull >= PULL_TRIGGER
+    pullStart.current = null
+    if (go) void doRefresh()
+    else setPull(0)
+  }
   const priv = inboxPrivacy
   const shownName = (n: string) => (priv?.maskNames ? maskName(n) : n)
   const avatarCls = priv?.blurAvatars ? 'blur-md' : ''
@@ -254,7 +280,12 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
               {showArchived ? 'Back to inbox' : `Archived (${archivedCount})`}
             </button>
           )}
-          <ul className={`flex-1 overflow-y-auto px-2 pb-4 ${ui.inboxLayout === 'grid' ? 'grid auto-rows-min grid-cols-3 content-start gap-1 sm:grid-cols-4 md:grid-cols-3' : ''}`}>
+          {onRefresh && (pull > 0 || refreshing) && (
+            <div role="status" aria-live="polite" className="flex items-center justify-center gap-2 overflow-hidden text-xs text-[rgb(var(--text-secondary))] transition-[height]" style={{ height: refreshing ? 28 : Math.min(28, pull / 2) }}>
+              {refreshing ? 'Refreshing…' : pull >= PULL_TRIGGER ? 'Release to refresh' : 'Pull to refresh'}
+            </div>
+          )}
+          <ul onTouchStart={onPullStart} onTouchMove={onPullMove} onTouchEnd={onPullEnd} onTouchCancel={onPullEnd} className={`flex-1 overflow-y-auto px-2 pb-4 ${ui.inboxLayout === 'grid' ? 'grid auto-rows-min grid-cols-3 content-start gap-1 sm:grid-cols-4 md:grid-cols-3' : ''}`}>
             {sorted.length === 0 && (
               <li className="col-span-full px-4 py-10 text-center text-sm text-[rgb(var(--text-secondary))]">
                 {query ? `No chats match “${query}”.` : activeTab === 'fav' ? 'No favorites yet. Open a chat, tap the palette icon and choose Add to Favorites.' : activeTab === 'groups' ? 'No groups yet. Tap New group to make one.' : activeTab === 'unread' ? 'You’re all caught up.' : 'No chats yet.'}

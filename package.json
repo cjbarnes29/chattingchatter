@@ -50,7 +50,9 @@
     "android:aab": "vite build && cap sync android && cd android && ./gradlew bundleRelease",
     "sync": "bash scripts/sync.sh",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "test": "node --experimental-strip-types --test tests/logic.test.ts",
+    "typecheck": "tsc -b"
   },
   "dependencies": {
     "@capacitor/app": "^8",
