@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import { avatarFor } from './auth'
 import type { Chat, Message } from './data'
-import { readPrivacyPrefs } from './prefs'
+import { receiptsOn } from './chatRules'
+import { insertWithExpiry } from './expiry'
 
 type Row = { id: string; sender_id: string; recipient_id: string; body: string; created_at: string; read_at: string | null }
 type Peer = {
@@ -108,7 +109,7 @@ export function useRealChats(myId: string) {
     if (!unread.length) return
     const at = new Date().toISOString()
     setRows((prev) => prev.map((r) => (unread.some((u) => u.id === r.id) ? { ...r, read_at: at } : r)))
-    if (readPrivacyPrefs().readReceipts) {
+    if (receiptsOn(REAL_PREFIX + openPeer)) {
       supabase.from('messages').update({ read_at: at }).in('id', unread.map((u) => u.id)).then(() => {})
     } else {
       // read receipts are off: remember on this device only, the sender never sees a "read" tick
@@ -155,7 +156,7 @@ export function useRealChats(myId: string) {
       const peerId = chatId.slice(REAL_PREFIX.length)
       const id = crypto.randomUUID()
       addRow({ id, sender_id: myId, recipient_id: peerId, body: text, created_at: new Date().toISOString(), read_at: null })
-      const { error } = await supabase.from('messages').insert({ id, recipient_id: peerId, body: text })
+      const { error } = await insertWithExpiry('messages', { id, recipient_id: peerId, body: text })
       if (error) setRows((prev) => prev.filter((r) => r.id !== id))
     },
     [addRow, myId],

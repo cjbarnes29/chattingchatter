@@ -1,7 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
+import { insertWithExpiry } from './expiry'
 import { avatarFor } from './auth'
 import { ensureMedia } from './permissions'
+import { encodeStory, extFor, isStoryId, parseStory, validMediaKey, type ReplyKind, type StoryMedia } from './storyFormat'
+import type { Audience } from './storyDrafts'
 
 export const GROUP_PREFIX = 'g:'
 export const GROUP_COLORS = ['#E0573B', '#2F7A6B', '#3A5BA0', '#8A4FB8', '#C98A1B', '#B83D6E']
@@ -30,7 +33,31 @@ export type Story = {
   visibleUntil: string
   reactions: Record<string, number>
   myReaction: string | null
+  /** photo, GIF or video, with optional music (see storyFormat.ts) */
+  media: StoryMedia | null
+  caption: string
+  audience: Audience
+  replies: StoryReply[]
 }
+
+export type StoryReply = {
+  id: string
+  storyId: string
+  authorId: string
+  authorName: string
+  authorAvatar: string
+  kind: ReplyKind
+  body: string
+  mediaKey: string | null
+  mediaType: string | null
+  /** true = everyone who can see the story sees it; false = only the story's author */
+  isPublic: boolean
+  createdAt: string
+}
+export type ReplyInput = { kind: ReplyKind; text?: string; media?: Blob; mediaType?: string; isPublic: boolean }
+type SendResult = { ok: true } | { ok: false; error: string; needsUpdate?: boolean }
+const NEEDS_UPDATE = 'This needs the stories database update (message_controls_and_stories.sql), which isn’t applied yet.'
+const MEDIA_BUCKET = 'story-media'
 
 export function timeAgo(iso: string) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
@@ -173,7 +200,7 @@ export function useGroups(myId: string) {
       const id = crypto.randomUUID()
       const row: GroupMessage = { id, groupId, senderId: myId, body, createdAt: new Date().toISOString() }
       setGroupMessages((prev) => ({ ...prev, [groupId]: [...(prev[groupId] ?? []), row] }))
-      const { error } = await supabase.from('group_messages').insert({ id, group_id: groupId, sender_id: myId, body })
+      const { error } = await insertWithExpiry('group_messages', { id, group_id: groupId, sender_id: myId, body })
       if (error) setGroupMessages((prev) => ({ ...prev, [groupId]: (prev[groupId] ?? []).filter((m) => m.id !== id) }))
     },
     [myId],
@@ -270,25 +297,30 @@ export function useStories(myId: string) {
 
   const load = useCallback(async () => {
     const nowIso = new Date().toISOString()
+    // '*' works before and after the stories update (audience/media columns are optional)
     const { data: rows } = await supabase
       .from('stories')
-      .select('id, author_id, body, created_at, visible_until')
+      .select('*')
       .gt('visible_until', nowIso)
       .order('created_at', { ascending: false })
       .limit(200)
-    const list = rows ?? []
+    const list = (rows ?? []) as { id: string; author_id: string; body: string; created_at: string; visible_until: string; audience?: string }[]
     const ids = list.map((s) => s.id)
-    const authorIds = [...new Set(list.map((s) => s.author_id as string))]
-    const [{ data: profs }, { data: reacts }] = await Promise.all([
-      authorIds.length ? supabase.from('profiles').select('id, name, avatar').in('id', authorIds) : Promise.resolve({ data: [] as { id: string; name: string; avatar: string | null }[] }),
+    type ReplyRow = { id: string; story_id: string; author_id: string; kind: ReplyKind; body: string; media_key: string | null; media_type: string | null; is_public: boolean; created_at: string }
+    const [{ data: reacts }, replyRes] = await Promise.all([
       ids.length ? supabase.from('story_reactions').select('story_id, user_id, emoji').in('story_id', ids) : Promise.resolve({ data: [] as { story_id: string; user_id: string; emoji: string }[] }),
+      ids.length ? supabase.from('story_replies').select('*').in('story_id', ids).order('created_at', { ascending: true }) : Promise.resolve({ data: [] as ReplyRow[], error: null }),
     ])
+    const replyRows = (replyRes.error ? [] : (replyRes.data ?? [])) as ReplyRow[]
+    const authorIds = [...new Set([...list.map((s) => s.author_id), ...replyRows.map((r) => r.author_id)])]
+    const { data: profs } = authorIds.length ? await supabase.from('profiles').select('id, name, avatar').in('id', authorIds) : { data: [] as { id: string; name: string; avatar: string | null }[] }
     const pmap = Object.fromEntries((profs ?? []).map((p) => [p.id, p]))
     setStories(
       list.map((s) => {
         const rs = (reacts ?? []).filter((r) => r.story_id === s.id)
         const counts: Record<string, number> = {}
         rs.forEach((r) => (counts[r.emoji] = (counts[r.emoji] ?? 0) + 1))
+        const { media, caption } = parseStory(s.body)
         return {
           id: s.id,
           authorId: s.author_id,
@@ -299,6 +331,15 @@ export function useStories(myId: string) {
           visibleUntil: s.visible_until,
           reactions: counts,
           myReaction: rs.find((r) => r.user_id === myId)?.emoji ?? null,
+          media,
+          caption,
+          audience: (['close', 'only', 'except'].includes(s.audience ?? '') ? s.audience : 'contacts') as Audience,
+          replies: replyRows
+            .filter((r) => r.story_id === s.id)
+            .map((r) => ({
+              id: r.id, storyId: r.story_id, authorId: r.author_id, authorName: pmap[r.author_id]?.name ?? 'Someone', authorAvatar: avatarFor(r.author_id, pmap[r.author_id]?.avatar),
+              kind: r.kind, body: r.body ?? '', mediaKey: r.media_key && validMediaKey(r.media_key) ? r.media_key : null, mediaType: r.media_type, isPublic: !!r.is_public, createdAt: r.created_at,
+            })),
         }
       }),
     )
@@ -311,6 +352,7 @@ export function useStories(myId: string) {
       .channel(`stories-${myId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'stories' }, () => load())
       .on('postgres_changes', { event: '*', schema: 'public', table: 'story_reactions' }, () => load())
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'story_replies' }, () => load())
       .subscribe()
     // refresh every minute so expired stories disappear on their own
     const t = setInterval(load, 60_000)
@@ -321,16 +363,82 @@ export function useStories(myId: string) {
     }
   }, [myId, load])
 
+  const upload = useCallback(async (key: string, blob: Blob, type: string) => {
+    const { error } = await supabase.storage.from(MEDIA_BUCKET).upload(key, blob, { contentType: type, upsert: false })
+    return error ? null : key
+  }, [])
+
+  /** Text, photo or GIF story, with who can see it. Photo/GIF and custom audiences need the stories update. */
   const postStory = useCallback(
-    async (body: string, visibleDays: number) => {
+    async (body: string, visibleDays: number, opts: { media?: Blob; mediaType?: string; music?: Blob; musicName?: string; audience?: Audience; audienceIds?: string[] } = {}): Promise<SendResult> => {
       const until = new Date(Date.now() + visibleDays * 86400_000).toISOString()
-      const { error } = await supabase.from('stories').insert({ author_id: myId, body, visible_days: visibleDays, visible_until: until })
-      if (error) return { ok: false as const, error: error.message }
+      const row: Record<string, unknown> = { author_id: myId, body, visible_days: visibleDays, visible_until: until }
+      if (opts.media || opts.music) {
+        const type = opts.media ? opts.mediaType || opts.media.type || 'image/jpeg' : 'audio/mpeg'
+        let key: string | null
+        if (opts.media) key = await upload(`story/${myId}/${crypto.randomUUID()}.${extFor(type)}`, opts.media, type)
+        else key = null
+        let music: StoryMedia['music']
+        if (opts.music) {
+          const mt = opts.music.type || 'audio/mpeg'
+          const mk = await upload(`story/${myId}/${crypto.randomUUID()}.${extFor(mt)}`, opts.music, mt)
+          if (!mk) return { ok: false, error: NEEDS_UPDATE, needsUpdate: true }
+          music = { key: mk, type: mt, name: opts.musicName || 'Music' }
+          // a story that is only music uses the music file as its media
+          if (!opts.media) { key = mk }
+        }
+        if (!key) return { ok: false, error: NEEDS_UPDATE, needsUpdate: true }
+        row.body = encodeStory({ key, type: opts.media ? type : music!.type, ...(opts.media && music ? { music } : {}) }, body)
+        row.media_key = key
+      }
+      if (opts.audience && opts.audience !== 'contacts') {
+        if ((opts.audience === 'only' || opts.audience === 'close') && !opts.audienceIds?.length) return { ok: false, error: opts.audience === 'close' ? 'Your close-friends list is empty. Add people first.' : 'Pick at least one person.' }
+        row.audience = opts.audience
+        row.audience_ids = opts.audienceIds ?? []
+      }
+      const { error } = await supabase.from('stories').insert(row)
+      if (error) {
+        if (/audience|media_key|column/i.test(error.message)) return { ok: false, error: NEEDS_UPDATE, needsUpdate: true }
+        return { ok: false, error: error.message }
+      }
       await load()
-      return { ok: true as const }
+      return { ok: true }
     },
-    [myId, load],
+    [myId, load, upload],
   )
+
+  /** A reply to a story: text, emoji, GIF, picture or voice; public (others who see the story see it) or private. */
+  const sendReply = useCallback(
+    async (storyId: string, r: ReplyInput): Promise<SendResult> => {
+      let mediaKey: string | null = null
+      const type = r.media ? r.mediaType || r.media.type : null
+      if (r.media && type) {
+        mediaKey = await upload(`reply/${storyId}/${myId}/${crypto.randomUUID()}.${extFor(type)}`, r.media, type)
+        if (!mediaKey) return { ok: false, error: NEEDS_UPDATE, needsUpdate: true }
+      }
+      if (r.kind === 'story' && !isStoryId(r.text ?? '')) return { ok: false, error: 'Pick one of your stories.' }
+      const { error } = await supabase.from('story_replies').insert({ story_id: storyId, author_id: myId, kind: r.kind, body: (r.text ?? '').slice(0, 1000), media_key: mediaKey, media_type: type, is_public: r.isPublic })
+      if (error) return { ok: false, error: /story_replies|relation|schema cache/i.test(error.message) ? NEEDS_UPDATE : error.message, needsUpdate: /story_replies|relation|schema cache/i.test(error.message) }
+      await load()
+      return { ok: true }
+    },
+    [myId, load, upload],
+  )
+  const deleteReply = useCallback(async (id: string) => {
+    await supabase.from('story_replies').delete().eq('id', id)
+    await load()
+  }, [load])
+
+  const urls = useRef(new Map<string, { url: string; until: number }>())
+  const mediaUrl = useCallback(async (key: string) => {
+    if (!validMediaKey(key)) return null
+    const hit = urls.current.get(key)
+    if (hit && hit.until > Date.now()) return hit.url
+    const { data, error } = await supabase.storage.from(MEDIA_BUCKET).createSignedUrl(key, 3600)
+    if (error || !data?.signedUrl) return null
+    urls.current.set(key, { url: data.signedUrl, until: Date.now() + 50 * 60_000 })
+    return data.signedUrl
+  }, [])
 
   const deleteStory = useCallback(
     async (id: string) => {
@@ -360,7 +468,7 @@ export function useStories(myId: string) {
     [myId, load],
   )
 
-  return { stories, loaded, postStory, deleteStory, editStory, react, reload: load }
+  return { stories, loaded, postStory, deleteStory, editStory, react, sendReply, deleteReply, mediaUrl, reload: load }
 }
 
 // ---------- CALLS (WebRTC, signaled through the call_signals table) ----------

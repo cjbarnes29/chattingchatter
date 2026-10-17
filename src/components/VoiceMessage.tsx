@@ -8,7 +8,7 @@ const SPEEDS = [1, 1.5, 2]
 
 /** A voice message bubble: play/pause, waveform you can tap or drag to seek, playback speed,
  *  save a copy, and (when the sender added a transcript) read and translate it. */
-export default function VoiceMessage({ att, api, fromMe }: { att: VoiceAtt; api?: AttachmentApi; fromMe: boolean }) {
+export default function VoiceMessage({ att, api, fromMe, canSave = true }: { att: VoiceAtt; api?: AttachmentApi; fromMe: boolean; canSave?: boolean }) {
   const audio = useRef<HTMLAudioElement | null>(null)
   const [url, setUrl] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
@@ -127,7 +127,7 @@ export default function VoiceMessage({ att, api, fromMe }: { att: VoiceAtt; api?
             <span className="flex items-center gap-0.5">
               <button type="button" onClick={cycleSpeed} aria-label={`Playback speed ${speed}×`} className="rounded-full px-1.5 py-0.5 text-[11px] font-bold hover:bg-black/5 dark:hover:bg-white/10">{speed}×</button>
               <button type="button" onClick={() => setShowTx((s) => !s)} aria-label={showTx ? 'Hide transcript and translation' : 'Transcript and translation'} aria-pressed={showTx} className={btn}>{att.transcript ? <FileText size={13} /> : <Languages size={13} />}</button>
-              <button type="button" onClick={save} aria-label="Save voice message" className={btn}><Download size={13} /></button>
+              {canSave && <button type="button" onClick={save} aria-label="Save voice message" className={btn}><Download size={13} /></button>}
             </span>
           </div>
         </div>

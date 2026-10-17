@@ -25,6 +25,10 @@ import VoiceMessage from './VoiceMessage'
 import FileMessage from './FileMessage'
 import { checkFile, encodeAttachment, parseAttachment, previewText } from '../attachmentFormat'
 import type { AttachmentApi } from '../attachmentStore'
+import { currentExpiry, isExpired, parseMeta, ruleMessage, timeLeftShort, withMeta } from '../messageMeta'
+import { readRule } from '../chatRules'
+import MessageControls from './MessageControls'
+import { Timer } from 'lucide-react'
 import {
   PrivateLock,
   SmartReplies,
@@ -140,6 +144,16 @@ const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
 export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, attachments, emojiScope = 'real', polls, calendar }: Props) {
   const cstyle = useChatStyle()
+  // ticks while disappearing messages are on screen, so they vanish on time
+  const [clock, setClock] = useState(() => Date.now())
+  const hasTimers = rawChat.messages.some((m) => m.text.startsWith('⟦meta:') && m.text.includes('"x"'))
+  useEffect(() => {
+    if (!hasTimers) return
+    setClock(Date.now()) // catch up straight away; the first timed message may arrive long after the chat opened
+    const t = setInterval(() => setClock(Date.now()), 5000)
+    return () => clearInterval(t)
+  }, [hasTimers])
+  const [controlsOpen, setControlsOpen] = useState(false)
   const pro = usePro()
   const opened = useSyncExternalStore(onOpenedChange, () => isChatOpened(rawChat.id))
   const confidential = allowLock && pro.lockedChatIds.includes(rawChat.id) && !opened
@@ -154,12 +168,22 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
       messages: rawChat.messages
         .filter((m) => !edits.msgs[m.id]?.deleted)
         .map((m) => {
+          // the sender's rules ride at the top of the message; read them and hide the marker
+          const { meta, body } = parseMeta(m.text)
+          const base = meta ? { ...m, text: body, meta } : m
           const e = edits.msgs[m.id]
-          return e ? { ...m, text: e.text ?? m.text, time: e.time ?? m.time } : m
-        }),
+          return e ? { ...base, text: e.text ?? base.text, time: e.time ?? base.time } : base
+        })
+        .filter((m) => !isExpired(m.meta, clock)),
     }),
-    [rawChat, personEdit, edits.msgs],
+    [rawChat, personEdit, edits.msgs, clock],
   )
+  const expirySecs = useMemo(() => currentExpiry(rawChat.messages.map((m) => m.text)), [rawChat.messages])
+  /** Sends with this chat's rules: disappearing time (shared) and my copy / download protection. */
+  const sendRuled = useCallback((chatId: string, text: string) => {
+    const r = readRule(chatId)
+    onSend(chatId, withMeta(text, { x: expirySecs ? Date.now() + expirySecs * 1000 : undefined, nc: r.noCopy || undefined, nd: r.noDownload || undefined }))
+  }, [onSend, expirySecs])
   const [sheetMsg, setSheetMsg] = useState<string | null>(null)
   const [personOpen, setPersonOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -231,7 +255,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
     if (!text) return
     const quoted = chat.messages.find((m) => m.id === replyTo)
     const q = quoted ? `↪ ${previewText(quoted.text).replace(/^↪ [^\n]*\n/, '').replace(/\n/g, ' ').slice(0, 80)}\n` : ''
-    onSend(rawChat.id, q + text)
+    sendRuled(rawChat.id, q + text)
     setReplyTo(null)
     setDraft('')
     setEmojiOpen(false)
@@ -261,7 +285,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
       const type = f.type || 'application/octet-stream'
       const up = await attachments.upload(f, f.name, type)
       if (!up.ok) { showErr(up.error); continue }
-      onSend(rawChat.id, encodeAttachment({ kind: 'file', key: up.key, name: f.name.slice(0, 200), size: f.size, type }))
+      sendRuled(rawChat.id, encodeAttachment({ kind: 'file', key: up.key, name: f.name.slice(0, 200), size: f.size, type }))
     }
     setSending(null)
   }
@@ -272,8 +296,8 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
     const up = await attachments.upload(r.blob, 'voice-message', r.type)
     setSending(null)
     if (!up.ok) return showErr(up.error)
-    onSend(rawChat.id, encodeAttachment({ kind: 'voice', key: up.key, size: r.blob.size, type: r.type, duration: r.duration, wave: r.wave, transcript: r.transcript, lang: r.lang }))
-  }, [attachments, onSend, rawChat.id, showErr])
+    sendRuled(rawChat.id, encodeAttachment({ kind: 'voice', key: up.key, size: r.blob.size, type: r.type, duration: r.duration, wave: r.wave, transcript: r.transcript, lang: r.lang }))
+  }, [attachments, sendRuled, rawChat.id, showErr])
 
   const subtitle = typing ? 'typing…' : chat.online ? 'online' : chat.lastSeen ?? 'offline'
 
@@ -314,6 +338,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
               {calendar.events.some((e) => new Date(e.starts_at).getTime() > Date.now()) && <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[rgb(var(--accent))]" />}
             </button>
           )}
+          <button onClick={() => setControlsOpen(true)} aria-label="Message controls" title="Message controls: disappearing messages, copying, downloads, receipts" className={`relative rounded-full p-2 hover:bg-[rgb(var(--accent-soft))] ${expirySecs ? 'text-[rgb(var(--accent))]' : ''}`}><Timer size={19} /></button>
           <button onClick={() => setStyleOpen(true)} aria-label="Wallpaper, sound and pin" title="Wallpaper, sound, favorite & pin" className="rounded-full p-2 hover:bg-[rgb(var(--accent-soft))]"><Palette size={19} /></button>
           <button aria-label="Search in chat" className="hidden rounded-full p-2 hover:bg-[rgb(var(--accent-soft))] sm:block"><Search size={19} /></button>
           {onOpenGroup ? (
@@ -393,6 +418,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         </button>
       </header>
 
+      {controlsOpen && <MessageControls chatId={rawChat.id} name={chat.name} expirySecs={expirySecs} onSetExpiry={(secs) => onSend(rawChat.id, ruleMessage(secs))} onClose={() => setControlsOpen(false)} />}
       {styleOpen && <ChatStyleSheet chatId={rawChat.id} name={chat.name} pinned={!!rawChat.pinned} onPin={(v) => onPinChat?.(v)} onClose={() => setStyleOpen(false)} lockable={allowLock} onUpgrade={onUpgrade} />}
       {confidential && (
         <PrivateLock
@@ -487,6 +513,18 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
             const quoteMatch = !hidden && !att && !story0(m.text) ? /^↪ ([^\n]*)\n([\s\S]*)$/.exec(m.text) : null
             const viewed = !m.fromMe && i === visibleMessages.length - 1
             const story = !hidden && !att && isEmojiStory(m.text)
+            // sender's protections apply to the other person's view
+            const noCopy = !m.fromMe && !!m.meta?.nc
+            const noSave = !m.fromMe && !!m.meta?.nd
+            if (m.meta?.rule) {
+              return (
+                <div key={m.id} className="my-2 flex justify-center" role="note">
+                  <span className="flex items-center gap-1.5 rounded-lg bg-[rgb(var(--bg-panel))] px-3 py-1.5 text-center text-[11px] text-[rgb(var(--text-secondary))] shadow-sm">
+                    <Timer size={12} /> {m.fromMe ? 'You' : chat.name.split(' ')[0]}: {m.text.replace(/^⏱ /, '')}
+                  </span>
+                </div>
+              )
+            }
             return (
               <div key={m.id}>
               {newDay && (
@@ -510,8 +548,12 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
                     onClick={() => {
                       if (m.private && !unlocked) setShowLock(m)
                     }}
+                    onCopy={noCopy ? (e) => e.preventDefault() : undefined}
+                    onCut={noCopy ? (e) => e.preventDefault() : undefined}
+                    onDragStart={noCopy || noSave ? (e) => e.preventDefault() : undefined}
+                    data-nocopy={noCopy || undefined}
                     style={{ fontSize: 'calc(14.5px * var(--font-scale, 1))', color: m.fromMe ? 'rgb(var(--bubble-out-fg, var(--text-primary)))' : 'rgb(var(--bubble-in-fg, var(--text-primary)))' }}
-                    className={`bubble relative px-3 py-2 leading-relaxed shadow-sm transition ${
+                    className={`bubble relative px-3 py-2 leading-relaxed shadow-sm transition ${noCopy ? 'select-none [-webkit-touch-callout:none]' : ''} ${
                       m.private && !unlocked ? 'cursor-pointer' : ''
                     } ${
                       m.fromMe
@@ -533,9 +575,9 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
                         <Lock size={14} /> Locked private message · tap to unlock
                       </p>
                     ) : att?.kind === 'voice' ? (
-                      <VoiceMessage att={att} api={attachments} fromMe={m.fromMe} />
+                      <VoiceMessage att={att} api={attachments} fromMe={m.fromMe} canSave={!noSave} />
                     ) : att?.kind === 'file' ? (
-                      <FileMessage att={att} api={attachments} />
+                      <FileMessage att={att} api={attachments} canSave={!noSave} />
                     ) : story ? (
                       <EmojiStory text={m.text} />
                     ) : quoteMatch ? (
@@ -548,6 +590,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
                     )}
                     <div className="float-right ml-3 mt-1 flex translate-y-0.5 items-center gap-1 text-[11px] text-[rgb(var(--text-secondary))]">
                       {viewed && <ViewingEye active />}
+                      {m.meta?.x && <span className="flex items-center gap-0.5" title="Disappears"><Timer size={11} />{timeLeftShort(m.meta.x, clock)}</span>}
                       <span>{m.time}</span>
                       {m.fromMe && <StatusIcon status={m.status} />}
                     </div>
@@ -586,7 +629,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         </div>
       </div>
 
-      <SmartReplies lastText={lastOther} onPick={(t) => onSend(chat.id, t)} />
+      <SmartReplies lastText={lastOther} onPick={(t) => sendRuled(chat.id, t)} />
       {replyTo && (
         <div className="flex items-center gap-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs md:px-5">
           <Reply size={14} className="shrink-0 text-[rgb(var(--accent))]" />
@@ -686,14 +729,14 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         const m = chat.messages.find((x) => x.id === sheetMsg)
         const raw = rawChat.messages.find((x) => x.id === sheetMsg)
         if (!m || !raw) return null
-        return <MessageSheet id={m.id} text={previewText(m.text)} time={m.time} edit={edits.msgs[m.id]} tags={tagsOf(m)} gestures={{ longPress: true }} onClose={() => setSheetMsg(null)} onReply={() => setReplyTo(m.id)} />
+        return <MessageSheet canCopy={m.fromMe || !m.meta?.nc} id={m.id} text={previewText(m.text)} time={m.time} edit={edits.msgs[m.id]} tags={tagsOf(m)} gestures={{ longPress: true }} onClose={() => setSheetMsg(null)} onReply={() => setReplyTo(m.id)} />
       })()}
       {zoomOpen && <PhotoZoom src={chat.avatar} name={chat.name} onClose={() => setZoomOpen(false)} />}
       {profileOpen && <ProfileSheet chat={chat} onClose={() => setProfileOpen(false)} onZoom={() => setZoomOpen(true)} onEditContact={() => { setProfileOpen(false); setPersonOpen(true) }} />}
       {personOpen && <PersonEditor chatId={rawChat.id} name={chat.name} avatar={chat.avatar} edited={!!personEdit} onClose={() => setPersonOpen(false)} />}
       {pollOpen && polls && <CreatePollModal onClose={() => setPollOpen(false)} onCreate={polls.onCreate} />}
       {calOpen && calendar && <CalendarPanel friend={chat.name.split(' ')[0]} {...calendar} onClose={() => setCalOpen(false)} />}
-      {ghost && <GhostCanvas friend={chat.name.split(' ')[0]} chatId={chat.id} onSend={onSend} onExit={exitGhost} onUpgrade={onUpgrade} calendar={calendar} />}
+      {ghost && <GhostCanvas friend={chat.name.split(' ')[0]} chatId={chat.id} onSend={sendRuled} onExit={exitGhost} onUpgrade={onUpgrade} calendar={calendar} />}
     </section>
   )
 }

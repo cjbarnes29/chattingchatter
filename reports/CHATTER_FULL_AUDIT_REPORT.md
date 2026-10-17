@@ -340,3 +340,63 @@ Plus: `tsc` 7 and `eslint` 23 (unchanged pre-existing issues), `vite build` pass
 - **The Android app can't use Google Password Manager directly.** Its web view has no password-manager API, so "Sign in automatically" isn't available there. Android's own Autofill (Google) can offer to save and fill the password on the sign-in form, if Autofill is on in phone settings. That depends on the phone and wasn't tested here.
 - Auto sign-in in Chrome needs the user to be signed in to Chrome with password saving on.
 - Not tested on a real phone.
+
+---
+
+## 10. Part D: Message Control Center, Story Maker and stories panel
+
+### What was asked
+- **Message Control Center:** per-chat expiry, block copy/forward, allow or block attachment downloads, read receipts and typing indicator controlled separately.
+- **Story Maker:** gallery photos → animated GIF, text, stickers, effects, drafts, reuse edits, who can view each story.
+- **Stories panel** with GIFs/photos/videos/music, text, emoji replies, GIF and voice replies, replying with your own story, private or public replies.
+
+### How it works
+**Message controls** (timer icon in a chat → *Message controls*):
+- **Disappearing messages:** off / 1 h / 24 h / 7 d / 30 d. The setting is a message in the chat, so both people share it and the newest rule wins. Each new message carries an expiry time; apps hide expired ones. A timer shows on each message ("5h").
+- **Block copying and forwarding:** messages you send can't be selected, copied or dragged out in the other person's Chatter, and the menu says "The sender turned off copying".
+- **Allow saving attachments:** when off, the other person can view or play files and voice messages but gets no Save button, no download control, no drag or right-click on pictures.
+- **Read receipts and typing indicator:** two independent per-chat settings (Default / On / Off), with global defaults in Settings → Privacy & security (typing indicator is a new global switch).
+- These per-message rules ride at the top of the message in a hidden marker line (`messageMeta.ts`). Previews and notifications never show it.
+
+**Story Maker** (Create story): pick several photos → animated GIF (Slideshow / Slow zoom / Crossfade, speed, effects Mono/Sepia/Vivid/Warm/Cool/Faded) or a single **picture**; add text (colour, size, background) and **emoji stickers** and drag them on the live preview; or pick a **ready-made GIF**, or a **video** (up to 8 MB). **Add music** (a song from the phone, up to 4 MB; plays only when a viewer taps play). Drafts (kept on the device, with photos, edits, caption, audience, format, video and music), reusable **templates** ("Save as template"), export with **Save to device**. GIFs are encoded on the device (`gifenc`, MIT licence) and shrunk if needed to stay under 2 MB.
+
+**Who can see a story:** Everyone I chat with · Close friends (a saved list) · Only… · Everyone except…
+
+**Stories panel** (the "All stories" tile in the stories row): a grid of every current story with its photo/GIF/video/music or text; tap to open.
+
+**Replies** (on any story you can see): text, emoji, GIF, picture, voice, or **"Reply with my story"** (links one of your own stories; tapping it opens that story if the viewer is allowed to see it). Each reply is **Private** (only the story's author sees it, the default) or **Public** (everyone who can see the story).
+
+### Files
+New: `messageMeta.ts`, `chatRules.ts`, `expiry.ts`, `components/MessageControls.tsx`, `storyMaker.ts`, `storyFormat.ts`, `storyDrafts.ts`, `components/StoryMaker.tsx`, `supabase/migrations/message_controls_and_stories.sql` (**not applied**). Changed: `ChatWindow.tsx`, `EditSheets.tsx`, `ChatList.tsx`, `FileMessage.tsx`, `VoiceMessage.tsx`, `Stories.tsx`, `social.ts`, `realChats.ts`, `App.tsx`, `Settings.tsx`, `prefs.ts`, `data.ts`, `attachmentFormat.ts`, `vite-env.d.ts`, `package.json` (adds `gifenc`).
+
+### Database update (`message_controls_and_stories.sql`, not applied: needs your approval)
+Adds `expires_at` to messages and group messages with a restrictive policy so expired messages are never returned, a trigger so the expiry can't be pushed later, and a purge job every 10 minutes (pg_cron). Adds story `audience`, `audience_ids` and `media_key`, with new read/react rules that honour the audience. Adds `story_replies` (public/private rules enforced by row-level security; "reply with my story" must link the replier's own story, checked by a trigger). Adds a private `story-media` bucket (8 MB; the app limits photos/GIFs to 2 MB and music to 4 MB). All 50 statements parse with PostgreSQL's own parser (`pglast`); **none has been run against a database.**
+
+### Until the database update is applied (tested)
+- Disappearing messages are hidden by the apps but stay in the database.
+- Text and emoji **private** story replies are sent as a direct message to the story's author.
+- Photo/GIF/video/music stories, audiences and public replies show "needs the stories database update", and the maker stays open with the work kept (so you can still Save draft or Save to device).
+
+### Test results
+**Browser (real components, Chromium, stand-ins for the server and sign-in, real microphone stream): 55 / 55 on two runs in a row. Unit tests: 21 / 21.**
+- **Message controls (21):** expired messages vanish at once; time-left shown; the marker line is never shown; choosing 24 h posts a shared rule note; later messages carry a 24 h expiry; protection flags are added; a protected message can't be selected; Copy is replaced by "sender turned off copying"; no Save on a voice message from a no-download sender; receipts and typing are separate; no page errors.
+- **Story Maker:** several photos open the preview; text, sticker, effect and motion work; templates and drafts save and reopen; **Save to device produces a real animated GIF (checked: `GIF89a` header, 3+ frames, under 2 MB)**; posting uploads to my private story folder with the caption; the GIF plays in the viewer; a single photo can post as a JPEG picture; a video over 8 MB and a song over 4 MB are refused; a video plus music uploads both and the viewer shows the video with a play button for the song (it doesn't autoplay).
+- **Replies:** private by default and saved as private; public emoji reply; GIF and picture replies uploaded under `reply/<story>/<me>/`; a non-GIF refused in the GIF slot; voice reply; reply with my story links my story's id and shows in the replies; no such button when I have no story; the direct-message fallback before the update.
+- **Audiences:** close friends with an empty list is refused; the list is saved for next time; "close" and "everyone except" save the right people.
+- Plus: `tsc` 7 and `eslint` 23 (same pre-existing issues), `vite build` passes.
+
+### Bugs found by testing and fixed
+1. **Expired messages could stay visible** for up to 5 seconds (or until the next tick) if the first timed message arrived after the chat was already open. The clock now catches up immediately.
+2. **Drafts forgot Picture vs GIF** for single photos (always reopened as GIF). Drafts now keep the format, and also a video or song.
+3. **The stories grid loaded full video players** with controls for every card. Cards now show a quiet preview.
+
+### Limitations (stated plainly)
+- **Not testable here without your approval:** the database update is not applied, so cross-device behaviour (audience rules, public vs private visibility enforced by the server, server-side deletion of expired messages) is **verified only in the browser with a stand-in server**, not against Supabase.
+- **Copy/forward/download blocks and disappearing messages are honoured by Chatter apps only.** Nothing stops screenshots, a second phone filming the screen, or an older app version that ignores the marker. This is why the controls say so. Disappearing messages are hidden by the apps and deleted by the server only after the update is applied.
+- **Block copying** prevents selecting and copying text in the app; it doesn't stop someone retyping it.
+- **The stories "everyone except / only / close friends" list is chosen by you per story; the person you exclude is not told.**
+- **Videos aren't re-encoded or trimmed** in the app: pick a video under 8 MB (the phone's gallery editor can trim it). Music is a file from the phone; **only share music you have the right to share**.
+- **Story files** are private and opened by short-lived links; the storage rules honour the audience. Deleting a story removes the post, but the stored file is cleaned up by a separate job (SQL can't delete storage files), so the file can remain unreadable in the bucket until cleaned.
+- **Group chats:** disappearing messages and protections apply to messages you send; receipts/typing per-chat settings apply to one-to-one chats (groups have no read ticks).
+- **No story view counts or "seen by" list** yet.
+- Not tested on a real phone. Not built into an APK yet.

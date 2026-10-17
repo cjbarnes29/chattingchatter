@@ -268,8 +268,11 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
           {page === 'privacy' && (
             <>
               <div className={divider}>
-                <Row icon={<Eye size={16} />} title="Read receipts" desc="Show when you've read messages">
+                <Row icon={<Eye size={16} />} title="Read receipts" desc="Show when you've read messages (can be changed per chat in Message controls)">
                   <Toggle on={privacy.readReceipts} onChange={(v) => setPrivacy({ readReceipts: v })} label="Read receipts" />
+                </Row>
+                <Row icon={<Eye size={16} />} title="Typing indicator" desc="Show “typing…” while you write (separate from read receipts; per chat in Message controls)">
+                  <Toggle on={privacy.typingIndicator} onChange={(v) => setPrivacy({ typingIndicator: v })} label="Typing indicator" />
                 </Row>
                 <div className="px-4 py-3.5">
                   <div className="flex items-center gap-3">

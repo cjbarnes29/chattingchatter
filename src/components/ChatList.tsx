@@ -10,6 +10,7 @@ import { useAppearance } from '../appearance'
 import { useInterface } from '../interface'
 import type { Density, TabId } from '../interfacePrefs'
 import { previewText } from '../attachmentFormat'
+import { isExpired, parseMeta } from '../messageMeta'
 
 type Props = {
   chats: Chat[]
@@ -43,7 +44,8 @@ const DENSITY: Record<Density, { row: string; avatar: string; name: string }> = 
 const TAB_LABEL: Record<TabId, string> = { all: 'All', fav: 'Favorites', groups: 'Groups', unread: 'Unread' }
 
 function lastMessage(chat: Chat) {
-  const m = chat.messages[chat.messages.length - 1]
+  // newest message that hasn't disappeared
+  const m = [...chat.messages].reverse().find((x) => !isExpired(parseMeta(x.text).meta))
   if (!m) return ''
   return (m.fromMe ? 'You: ' : '') + previewText(m.text)
 }

@@ -8,7 +8,7 @@ const RISKY = /\.(apk|aab|exe|msi|bat|cmd|com|scr|ps1|vbs|js|jar|sh|app|dmg|deb|
 
 /** A file bubble. Pictures show inline (tap to enlarge), audio and video load on tap, anything else
  *  shows its name and size with a Save button. SVG and HTML are never shown inline. */
-export default function FileMessage({ att, api }: { att: FileAtt; api?: AttachmentApi }) {
+export default function FileMessage({ att, api, canSave = true }: { att: FileAtt; api?: AttachmentApi; canSave?: boolean }) {
   const kind = fileKind(att.type, att.name)
   const [url, setUrl] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -39,7 +39,9 @@ export default function FileMessage({ att, api }: { att: FileAtt; api?: Attachme
     try { await saveFromUrl(u, att.name, att.type) } catch { setErr('Couldn’t save the file.') }
   }
 
-  const saveBtn = (
+  const saveBtn = !canSave ? (
+    <span className="shrink-0 text-[10px] text-[rgb(var(--text-tertiary))]" title="The sender turned off saving">Saving off</span>
+  ) : (
     <button type="button" onClick={save} aria-label={`Save ${att.name}`} className="flex shrink-0 items-center gap-1 rounded-full bg-[rgb(var(--accent))] px-2.5 py-1 text-[11px] font-semibold text-[rgb(var(--accent-foreground))]">
       {busy ? <Loader2 size={12} className="animate-spin" /> : <Download size={12} />} Save
     </button>
@@ -49,12 +51,12 @@ export default function FileMessage({ att, api }: { att: FileAtt; api?: Attachme
     <div className="w-[min(17rem,70vw)]" data-testid="file-message">
       {kind.inline === 'image' && url ? (
         <button type="button" onClick={() => setBig(true)} aria-label={`Open ${att.name}`} className="block overflow-hidden rounded-lg">
-          <img src={url} alt={att.name} className="max-h-64 w-full object-cover" />
+          <img src={url} alt={att.name} draggable={canSave} onContextMenu={canSave ? undefined : (e) => e.preventDefault()} className={`max-h-64 w-full object-cover ${canSave ? '' : 'pointer-events-none select-none'}`} />
         </button>
       ) : kind.inline === 'audio' && url ? (
-        <audio controls src={url} className="w-full" />
+        <audio controls src={url} className="w-full" controlsList={canSave ? undefined : 'nodownload'} />
       ) : kind.inline === 'video' && url ? (
-        <video controls src={url} className="max-h-64 w-full rounded-lg" />
+        <video controls src={url} className="max-h-64 w-full rounded-lg" controlsList={canSave ? undefined : 'nodownload'} onContextMenu={canSave ? undefined : (e) => e.preventDefault()} />
       ) : null}
       <div className="mt-1 flex items-center gap-2.5">
         {!(kind.inline && url) && (

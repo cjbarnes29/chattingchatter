@@ -13,6 +13,8 @@ export type Message = {
   poll?: Poll
   /** "Today", "Yesterday", a weekday or a date; when set, the chat shows a date divider where it changes */
   dateLabel?: string
+  /** sender's rules for this message (Message Control Center), read from the message body */
+  meta?: import('./messageMeta').MsgMeta | null
 }
 
 export type Chat = {

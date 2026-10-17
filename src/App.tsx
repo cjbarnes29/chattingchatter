@@ -25,7 +25,8 @@ import { useRealChats, REAL_PREFIX } from './realChats'
 import NewChat from './components/NewChat'
 import { useGroups, useStories, useCall, GROUP_PREFIX, type Story, type Group } from './social'
 import { CreateGroupModal, GroupSettingsModal } from './components/GroupPanels'
-import { StoriesRow, StoryComposer, StoryViewer } from './components/Stories'
+import { StoriesRow, StoryViewer, StoriesPanel } from './components/Stories'
+import StoryMaker from './components/StoryMaker'
 import CallOverlay from './components/CallOverlay'
 import { useContacts, findRegisteredByEmails, pickPhoneContacts } from './contacts'
 import ContactsPanel from './components/ContactsPanel'
@@ -37,6 +38,7 @@ import Dashboard from './components/Dashboard'
 import { onLockRequest, forgetOpenedChats } from './appLock'
 import { setDecoyOwner } from './decoyStore'
 import { serverAttachments } from './attachmentStore'
+import { typingOn } from './chatRules'
 import { previewText } from './attachmentFormat'
 
 export default function Root() {
@@ -157,6 +159,7 @@ function App() {
   const [groupSettingsId, setGroupSettingsId] = useState<string | null>(null)
   const [composerOpen, setComposerOpen] = useState(false)
   const [viewStory, setViewStory] = useState<Story | null>(null)
+  const [storiesOpen, setStoriesOpen] = useState(false)
 
   // Group chats appear alongside direct chats, shaped as Chat objects for the list
   const groupChats: Chat[] = groupApi.groups.map((g: Group) => {
@@ -371,6 +374,7 @@ function App() {
     if (gcall.active) return true
     if (viewStory) { setViewStory(null); return true }
     if (composerOpen) { setComposerOpen(false); return true }
+    if (storiesOpen) { setStoriesOpen(false); return true }
     if (groupSettingsId) { setGroupSettingsId(null); return true }
     if (createGroupOpen) { setCreateGroupOpen(false); return true }
     if (newChatOpen) { setNewChatOpen(false); return true }
@@ -444,6 +448,7 @@ function App() {
                 myAvatar={user!.avatar}
                 onOpen={(s) => setViewStory(s)}
                 onCreate={() => setComposerOpen(true)}
+                onOpenAll={() => setStoriesOpen(true)}
               />
             }
           />
@@ -486,10 +491,15 @@ function App() {
             }}
           />
         )}
+        {storiesOpen && (
+          <StoriesPanel stories={storyApi.stories} myId={user!.id} mediaUrl={storyApi.mediaUrl} onOpen={(s) => setViewStory(s)} onCreate={() => setComposerOpen(true)} onClose={() => setStoriesOpen(false)} />
+        )}
         {composerOpen && (
-          <StoryComposer
+          <StoryMaker
+            myId={user!.id}
+            people={contactApi.contacts.map((c) => ({ id: c.id, name: c.name, avatar: c.avatar }))}
             onClose={() => setComposerOpen(false)}
-            onPost={(body, days) => storyApi.postStory(body, days)}
+            onPost={(caption, days, opts) => storyApi.postStory(caption, days, opts)}
           />
         )}
         {viewStory && (
@@ -503,6 +513,12 @@ function App() {
               await storyApi.deleteStory(viewStory.id)
               setViewStory(null)
             }}
+            mediaUrl={storyApi.mediaUrl}
+            onReply={(r) => storyApi.sendReply(viewStory.id, r)}
+            onDeleteReply={storyApi.deleteReply}
+            onPrivateDM={(authorId, text) => real.send(REAL_PREFIX + authorId, text)}
+            allStories={storyApi.stories}
+            onOpenStory={(s) => setViewStory(s)}
           />
         )}
         {settingsGroup && (
@@ -567,7 +583,7 @@ function App() {
               key={activeChat.id}
               chat={activeChat}
               typing={typingApi.typing}
-              onTyping={typingApi.notify}
+              onTyping={() => { if (typingOn(activeChat.id)) typingApi.notify() }}
               onBack={closeChat}
               onSend={sendMessage}
               onUpgrade={() => setUpgradeOpen(true)}

@@ -105,7 +105,8 @@ export function parseAttachment(text: string): Attachment | null {
 
 /** The readable part of a message, for chat previews and notifications. */
 export function previewText(text: string) {
-  return text.replace(RE, '')
+  // also hides the Message Control Center marker line (messageMeta.ts)
+  return text.replace(/^⟦meta:\{[^\n]{0,200}\}⟧\n?/, '').replace(RE, '')
 }
 
 /** Downsamples loudness readings to `bars` values between 0 and 9 for a WhatsApp-style waveform. */
