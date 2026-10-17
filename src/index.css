@@ -143,3 +143,20 @@ h1, h2, h3 { font-weight: 700; letter-spacing: -0.03em; }
 .motion-off .blink-eye { animation: none; }
 .motion-off .msg-in, .motion-off .slide-down, .motion-off .story-step { opacity: 1; }
 .motion-off *, .motion-off *::before, .motion-off *::after { transition-duration: 0s !important; scroll-behavior: auto !important; }
+
+/* Interface settings: stronger secondary text and borders for readability */
+.hc {
+  --text-secondary: 62 56 70;
+  --text-tertiary: 88 81 92;
+  --border: 178 166 150;
+}
+.dark.hc {
+  --text-secondary: 214 208 218;
+  --text-tertiary: 182 175 190;
+  --border: 92 86 112;
+}
+/* Interface settings: roomier line spacing for easier reading */
+.relaxed body,
+.relaxed .bubble {
+  line-height: 1.75;
+}

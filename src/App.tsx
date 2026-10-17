@@ -31,6 +31,8 @@ import ContactsPanel from './components/ContactsPanel'
 import { Archive, BellRing, X } from 'lucide-react'
 import { useEvents, fmtWhen, remindLabel } from './calendar'
 import { useChatStyle, setLocalPin, playSound, DEFAULT_PIN } from './chatStyle'
+import { useIsDark, toggleDark, startInterfaceSync, useInterface } from './interface'
+import Dashboard from './components/Dashboard'
 
 export default function Root() {
   return (
@@ -98,6 +100,10 @@ function Gate() {
 
 function App() {
   const { user } = useAuth()
+  // bring this account's interface choices to this device (and save local ones if they're newer)
+  useEffect(() => {
+    void startInterfaceSync(user?.id ?? null)
+  }, [user?.id])
   const real = useRealChats(user!.id)
   const cs = useChatStyle()
   const groupApi = useGroups(user!.id)
@@ -174,7 +180,8 @@ function App() {
   const [newChatOpen, setNewChatOpen] = useState(false)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
-  const [dark, setDark] = useState(() => localStorage.getItem('chatter.dark') === '1')
+  const dark = useIsDark()
+  const ui = useInterface()
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [upgradeOpen, setUpgradeOpen] = useState(false)
   const { isPro, focus } = usePro()
@@ -196,10 +203,6 @@ function App() {
     }
   }, [inFocus, notice])
 
-  useEffect(() => {
-    document.documentElement.classList.toggle('dark', dark)
-    localStorage.setItem('chatter.dark', dark ? '1' : '0')
-  }, [dark])
 
   const typingPeer = activeId && activeId.startsWith(REAL_PREFIX) ? activeId.slice(REAL_PREFIX.length) : null
   const typingApi = useTyping(user!.id, typingPeer)
@@ -258,6 +261,23 @@ function App() {
           },
         }
       : undefined
+
+  // Optional home dashboard (Settings → Interface). Built only from data already on screen elsewhere.
+  const dashboard = ui.dashboard.enabled ? (
+    <Dashboard
+      widgets={ui.dashboard.widgets}
+      chats={chats}
+      groups={groupApi.groups}
+      events={evApi.events}
+      stories={storyApi.stories}
+      myId={user!.id}
+      peerName={(peerId) => chats.find((c) => c.id === REAL_PREFIX + peerId)?.name.split(' ')[0] ?? 'a friend'}
+      onOpenChat={openChat}
+      onOpenStory={(s) => setViewStory(s)}
+      onOpenEvent={(e) => openChat(REAL_PREFIX + (e.creator_id === user!.id ? e.peer_id : e.creator_id))}
+      groupChatId={(gid) => GROUP_PREFIX + gid}
+    />
+  ) : null
 
   const calendarProps =
     activePeerId && activeChat
@@ -360,7 +380,7 @@ function App() {
             onQuery={setQuery}
             onSelect={openChat}
             dark={dark}
-            onToggleDark={() => setDark((d) => !d)}
+            onToggleDark={toggleDark}
             onOpenSettings={() => setSettingsOpen(true)}
             onUpgrade={() => setUpgradeOpen(true)}
             onNewChat={() => setNewChatOpen(true)}
@@ -372,6 +392,7 @@ function App() {
             onNewGroup={() => setCreateGroupOpen(true)}
             onPinChat={(id, v) => pinAny(id, v)}
             onArchiveChat={(id, v) => { if (id.startsWith(REAL_PREFIX)) contactApi.updatePref(id.slice(REAL_PREFIX.length), { archived: v }) }}
+            dashboard={dashboard ?? undefined}
             stories={
               <StoriesRow
                 stories={storyApi.stories}
@@ -382,7 +403,7 @@ function App() {
             }
           />
         </div>
-        <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} dark={dark} onToggleDark={() => setDark((d) => !d)} onUpgrade={() => { setSettingsOpen(false); setUpgradeOpen(true) }} />
+        <Settings open={settingsOpen} onClose={() => setSettingsOpen(false)} dark={dark} onToggleDark={toggleDark} onUpgrade={() => { setSettingsOpen(false); setUpgradeOpen(true) }} />
         {upgradeOpen && <Upgrade onClose={() => setUpgradeOpen(false)} />}
         {contactsOpen && (
           <ContactsPanel
@@ -523,6 +544,11 @@ function App() {
               chatActions={activeChatActions}
               calendar={calendarProps}
             />
+          ) : dashboard ? (
+            <div className="flex-1 overflow-y-auto bg-[rgb(var(--bg-chat))] p-6 lg:p-8">
+              <h2 className="mb-4 text-2xl font-extrabold tracking-tight">Home</h2>
+              {dashboard}
+            </div>
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[rgb(var(--bg-chat))] p-10 text-center">
               <div className="flex h-20 w-20 items-center justify-center rounded-3xl bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] shadow-lg">
