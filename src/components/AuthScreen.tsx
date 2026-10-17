@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { MessageCircle, Mail, User as UserIcon, Lock, Loader2, MailCheck, KeyRound } from 'lucide-react'
 import { useAuth } from '../auth'
 import InstallButton from './InstallButton'
@@ -10,6 +10,7 @@ const field =
   'flex items-center gap-2 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3.5 py-3 ring-1 ring-transparent focus-within:ring-[rgb(var(--accent))]'
 const label = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--text-tertiary))]'
 const input = 'w-full bg-transparent text-sm outline-none placeholder:text-[rgb(var(--text-tertiary))]'
+const RESEND_SECONDS = 60
 
 // Remember an unfinished sign-up so the code screen comes back if the app is closed or reloaded.
 const PENDING_KEY = 'chatter.pendingConfirm'
@@ -44,6 +45,14 @@ export default function AuthScreen() {
   const [notice, setNotice] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
+  // Seconds left before another code can be requested (Supabase allows one email per address per minute)
+  const [cooldown, setCooldown] = useState(0)
+
+  useEffect(() => {
+    if (cooldown <= 0) return
+    const t = setTimeout(() => setCooldown((c) => c - 1), 1000)
+    return () => clearTimeout(t)
+  }, [cooldown])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -71,7 +80,13 @@ export default function AuthScreen() {
     } else if (res.needsConfirm) {
       writePending(email.trim().toLowerCase())
       setConfirmSent(true)
-      if (res.existing) setNotice('This email already has an account. If it isn’t confirmed yet, enter the new code we just sent. Already confirmed? Go back and sign in.')
+      if (res.existing) {
+        // We cannot tell a confirmed account from an unconfirmed one (Supabase hides that on purpose),
+        // so say exactly what can happen instead of promising a code.
+        setNotice('This email already has an account. If it was never confirmed, a new code was just sent. If you already confirmed it, no code is sent. Tap “Back to sign in” and sign in, or use “Forgot password?”.')
+        if (res.resendError) setError(res.resendError)
+      }
+      if (!res.resendError) setCooldown(RESEND_SECONDS)
     }
   }
 
@@ -93,8 +108,16 @@ export default function AuthScreen() {
     setBusy(true)
     const res = await resendSignupCode(email)
     setBusy(false)
-    if (res.ok) setNotice(`A new code is on its way to ${email}.`)
-    else setError(res.error)
+    if (res.ok) {
+      setCooldown(RESEND_SECONDS)
+      setCode('')
+      setNotice(`If ${email} is waiting to be confirmed, a new code is on its way. Only the newest code works.`)
+    } else {
+      setError(res.error)
+      // Supabase told us a code was sent less than a minute ago: wait out the rest of that minute
+      const wait = res.error.match(/wait (\d+) seconds/i)
+      if (wait) setCooldown(Number(wait[1]))
+    }
   }
 
   if (showTerms) return <Terms onBack={() => setShowTerms(false)} />
@@ -158,8 +181,9 @@ export default function AuthScreen() {
               {busy && <Loader2 size={16} className="animate-spin" />} Confirm account
             </button>
             <div className="flex items-center justify-between text-sm font-semibold">
-              <button type="button" onClick={resend} disabled={busy} className="text-[rgb(var(--accent))] disabled:opacity-60">
-                Resend code
+              <button type="button" onClick={resend} disabled={busy || cooldown > 0} className="flex items-center gap-1.5 text-[rgb(var(--accent))] disabled:opacity-60">
+                {busy && <Loader2 size={14} className="animate-spin" />}
+                {cooldown > 0 ? `Resend code in ${cooldown}s` : 'Resend code'}
               </button>
               <button
                 type="button"
@@ -172,6 +196,7 @@ export default function AuthScreen() {
                   setCode('')
                   setError(null)
                   setNotice(null)
+                  setCooldown(0)
                 }}
                 className="text-[rgb(var(--text-secondary))]"
               >
