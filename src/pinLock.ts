@@ -3,7 +3,7 @@
  *  What this protects against: someone picking up an unlocked-then-locked phone and guessing the PIN.
  *  What it does not: the PIN lock lives on this device. Someone with full access to the device's
  *  storage can still attempt an offline guess, which the slow hash below makes expensive but, for a
- *  4–6 digit PIN, not impossible. Your real messages are protected by your account sign-in on the server. */
+ *  short PIN, not impossible. Your real messages are protected by your account sign-in on the server. */
 
 const ITERATIONS = 210_000
 const enc = new TextEncoder()
@@ -55,7 +55,10 @@ export async function checkPin(pin: string, stored: string | null, role: 'real' 
   return { ok, legacy: ok }
 }
 
-export const validPin = (pin: string) => /^\d{4,6}$/.test(pin)
+export const PIN_MIN = 4
+export const PIN_MAX = 32
+/** A PIN is any 4 to 32 characters, digits or not. */
+export const validPin = (pin: string) => pin.length >= PIN_MIN && pin.length <= PIN_MAX
 
 // ---------- wrong-guess limits ----------
 export const FREE_TRIES = 5

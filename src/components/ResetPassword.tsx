@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { KeyRound, Lock, Loader2, Mail, MailCheck, ArrowLeft } from 'lucide-react'
 import { useAuth } from '../auth'
+import SecretInput from './SecretInput'
 
 type Step = 'email' | 'code' | 'password'
 
@@ -189,11 +190,11 @@ export default function ResetPassword({ onBack }: { onBack?: () => void }) {
           <form onSubmit={savePassword} className="space-y-4">
             <label className={field}>
               <Lock size={16} className="text-[rgb(var(--text-tertiary))]" />
-              <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="New password (at least 6 characters)" autoComplete="new-password" required className={input} />
+              <SecretInput value={pw} onChange={setPw} placeholder="New password (at least 6 characters)" label="New password" autoComplete="new-password" required className={input} wrapClassName="flex-1" />
             </label>
             <label className={field}>
               <Lock size={16} className="text-[rgb(var(--text-tertiary))]" />
-              <input type="password" value={pw2} onChange={(e) => setPw2(e.target.value)} placeholder="Confirm new password" autoComplete="new-password" required className={input} />
+              <SecretInput value={pw2} onChange={setPw2} placeholder="Confirm new password" label="Confirm new password" autoComplete="new-password" required className={input} wrapClassName="flex-1" />
             </label>
             {error && <p role="alert" className="text-sm text-rose-500">{error}</p>}
             <button type="submit" disabled={busy} className={primaryBtn}>

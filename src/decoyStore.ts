@@ -82,3 +82,6 @@ export const useDecoyItems = () =>
   useSyncExternalStore((cb) => { subs.add(cb); return () => { subs.delete(cb) } }, () => items)
 export const useDecoyThreads = () =>
   useSyncExternalStore((cb) => { subs.add(cb); return () => { subs.delete(cb) } }, () => threads)
+
+/** What the decoy profile shows as "you": nothing from the real account (name, photo, email) ever appears there. */
+export const DECOY_SELF = { name: 'Me', avatar: 'https://ui-avatars.com/api/?background=7A5C4F&color=fff&bold=true&name=Me' }

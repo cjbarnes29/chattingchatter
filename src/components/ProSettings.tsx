@@ -4,7 +4,9 @@ import { usePro, type AutoLock, type Masterpiece } from '../pro'
 import { useAuth } from '../auth'
 import { bioUnlockEnabled, setBioUnlockEnabled, biometricEnrolled, enrollBiometric, verifyBiometric } from '../biometric'
 import { useDecoyItems, updateDecoy } from '../decoyStore'
-import { validPin } from '../pinLock'
+import { validPin, PIN_MAX } from '../pinLock'
+import SecretInput from './SecretInput'
+import { markUnlocked } from '../appLock'
 import { FEATURES, STATUS_LABEL, limit } from '../entitlements'
 import MasterpieceViewer from './MasterpieceViewer'
 import { saveTextFile } from '../native'
@@ -55,6 +57,8 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const decoyItems = useDecoyItems()
   const [pin, setPin] = useState('')
   const [decoy, setDecoy] = useState('')
+  const [pin2, setPin2] = useState('')
+  const [decoy2, setDecoy2] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [offPin, setOffPin] = useState('')
   const [offOpen, setOffOpen] = useState(false)
@@ -66,18 +70,23 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const lockMax = limit('confidentialChats', pro.isPro)
 
   const savePins = async () => {
-    if (!pin && !decoy) return flash(false, pro.hasPins ? 'Enter a new real PIN or a decoy PIN.' : 'Enter a real PIN (4–6 digits).')
+    if (!pin && !decoy) return flash(false, pro.hasPins ? 'Enter a new real PIN or a decoy PIN.' : 'Enter a real PIN (at least 4 characters).')
     if (!pin && !pro.hasPins) return flash(false, 'Set your real PIN first.')
-    if (pin && !validPin(pin)) return flash(false, 'Real PIN must be 4–6 digits.')
-    if (decoy && !validPin(decoy)) return flash(false, 'Decoy PIN must be 4–6 digits.')
+    if (pin && !validPin(pin)) return flash(false, 'Real PIN must be at least 4 characters.')
+    if (decoy && !validPin(decoy)) return flash(false, 'Decoy PIN must be at least 4 characters.')
+    if (pin && pin !== pin2) return flash(false, 'The two real PIN entries do not match.')
+    if (decoy && decoy !== decoy2) return flash(false, 'The two decoy PIN entries do not match.')
     if (pin && decoy && pin === decoy) return flash(false, 'Decoy PIN must be different from your real PIN.')
     // compare against the PIN that's already saved, both ways round, without counting as a guess
     if (pin && !decoy && (await pro.matchPin(pin)) === 'decoy') return flash(false, 'That’s your decoy PIN. Pick a different real PIN.')
     if (decoy && !pin && (await pro.matchPin(decoy)) === 'real') return flash(false, 'That’s your real PIN. Pick a different decoy PIN.')
+    if (pin && !pro.hasPins) markUnlocked() // first PIN: the person is already in, don't lock them out of this session
     if (pin) await pro.setRealPin(pin)
     if (decoy) await pro.setDecoyPin(decoy)
     setPin('')
+    setPin2('')
     setDecoy('')
+    setDecoy2('')
     flash(true, 'Saved.')
   }
 
@@ -158,10 +167,12 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
       <Section title="PIN lock & decoy profile" id="pin">
         <div className="rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Lock size={15} className="text-[rgb(var(--accent))]" /> PIN lock {pro.hasPins ? <span className="ml-auto flex items-center gap-1 text-xs text-[rgb(var(--accent))]"><Check size={12} /> On</span> : null}</div>
-          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN when it opens and before logging out. After 5 wrong PINs it makes you wait, longer each time. A separate decoy PIN opens a harmless chat history instead of your real one.</p>
+          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN when it opens and before logging out. After 5 wrong PINs it makes you wait, longer each time. A PIN is 4 or more characters. A separate decoy PIN opens a harmless chat history instead of your real one.</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            <input inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={pro.hasPins ? 'New real PIN' : 'Real PIN (4–6 digits)'} aria-label="Real PIN" type="password" className={field} />
-            <input inputMode="numeric" value={decoy} onChange={(e) => setDecoy(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={pro.decoyPinHash ? 'New decoy PIN' : 'Decoy PIN (optional)'} aria-label="Decoy PIN" type="password" className={field} />
+            <SecretInput value={pin} onChange={setPin} maxLength={PIN_MAX} placeholder={pro.hasPins ? 'New real PIN' : 'Real PIN (4+ characters)'} label="Real PIN" autoComplete="new-password" className={`${field} w-full`} />
+            <SecretInput value={decoy} onChange={setDecoy} maxLength={PIN_MAX} placeholder={pro.decoyPinHash ? 'New decoy PIN' : 'Decoy PIN (optional)'} label="Decoy PIN" autoComplete="new-password" className={`${field} w-full`} />
+            <SecretInput value={pin2} onChange={setPin2} maxLength={PIN_MAX} placeholder="Type the real PIN again" label="Confirm real PIN" autoComplete="new-password" className={`${field} w-full`} />
+            <SecretInput value={decoy2} onChange={setDecoy2} maxLength={PIN_MAX} placeholder="Type the decoy PIN again" label="Confirm decoy PIN" autoComplete="new-password" className={`${field} w-full`} />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button onClick={savePins} className="rounded-xl bg-[rgb(var(--accent))] px-4 py-2 text-xs font-semibold text-[rgb(var(--accent-foreground))]">Save PINs</button>
@@ -171,7 +182,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
           </div>
           {offOpen && (
             <form onSubmit={(e) => { e.preventDefault(); void turnOffPin() }} className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-rose-500/10 p-3">
-              <input inputMode="numeric" type="password" value={offPin} onChange={(e) => setOffPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Current real PIN" aria-label="Current real PIN" className={`${field} w-40`} />
+              <SecretInput value={offPin} onChange={setOffPin} maxLength={PIN_MAX} placeholder="Current real PIN" label="Current real PIN" wrapClassName="w-48" className={`${field} w-full`} />
               <button type="submit" disabled={offPin.length < 4} className="rounded-xl bg-rose-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Turn off</button>
               <button type="button" onClick={() => { setOffOpen(false); setOffPin('') }} className="text-xs font-semibold text-[rgb(var(--text-secondary))]">Cancel</button>
             </form>
@@ -230,7 +241,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
             <ul className="mt-2 list-disc space-y-1 pl-5">
               <li>The PIN lock and decoy live on this device. They stop someone who picks up your phone; they don’t protect a device that’s been fully copied, and anyone signing in to your account elsewhere sees your real chats.</li>
               <li>The decoy only shows the chats you set up. Messages typed there stay on this device.</li>
-              <li>PINs are stored as a slow, salted hash, never as the PIN itself. A short PIN can still be guessed with enough time and access, so pick 6 digits if you can.</li>
+              <li>PINs are stored as a slow, salted hash, never as the PIN itself. A short PIN can still be guessed with enough time and access, so pick a longer PIN (letters and numbers are fine) if you can.</li>
               <li>Fingerprint unlock is handled by your phone. It’s only as strong as your phone’s screen lock.</li>
             </ul>
           </details>

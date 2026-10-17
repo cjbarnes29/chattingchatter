@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard, Smartphone } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard, Smartphone, Clock, BookOpen, Globe } from 'lucide-react'
 import { useAuth } from '../auth'
 import { usePro } from '../pro'
 import ProSettings from './ProSettings'
@@ -10,7 +10,13 @@ import FeatureSettings from './FeatureSettings'
 import AppPermissions from './AppPermissions'
 import { isNative } from '../native'
 import { PinGate } from './PinGate'
-import { useNotifPrefs, usePrivacyPrefs } from '../prefs'
+import Tutorial from './Tutorial'
+import DecoyRecovery from './DecoyRecovery'
+import PasswordConfirm from './PasswordConfirm'
+import { PhotoZoom } from './ProfileView'
+import { requestLock, requestDecoy } from '../appLock'
+import { DECOY_SELF } from '../decoyStore'
+import { useNotifPrefs, usePrivacyPrefs, useDecoyPrefs, setDecoyPrefs } from '../prefs'
 import { biometricEnabled, setBiometricEnabled, biometricEnrolled, enrollBiometric, verifyBiometric } from '../biometric'
 
 type Props = {
@@ -23,7 +29,7 @@ type Props = {
   decoy?: boolean
 }
 
-type Page = 'profile' | 'account' | 'appearance' | 'interface' | 'privacy' | 'notifications' | 'gestures' | 'ghost' | 'decoy' | 'pro' | 'permissions'
+type Page = 'profile' | 'account' | 'appearance' | 'interface' | 'privacy' | 'notifications' | 'gestures' | 'ghost' | 'decoy' | 'pro' | 'permissions' | 'time' | 'tutorial'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -57,10 +63,17 @@ const SubTitle = ({ children }: { children: React.ReactNode }) => (
 )
 
 export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade, decoy = false }: Props) {
-  const { user, logout, updateProfile, uploadAvatar } = useAuth()
+  const { user, logout, updateProfile, uploadAvatar, setProfileVisibility } = useAuth()
   const { hasPins, isPro } = usePro()
   const [page, setPage] = useState<Page | null>(null)
   const [confirmOut, setConfirmOut] = useState(false)
+  const [passwordOut, setPasswordOut] = useState(false)
+  const [tutorialOpen, setTutorialOpen] = useState(false)
+  const [recoveryOpen, setRecoveryOpen] = useState(false)
+  const [zoomOpen, setZoomOpen] = useState(false)
+  const decoyPrefs = useDecoyPrefs()
+  // swipe up and hold at the bottom of the decoy settings: opens account recovery
+  const recoveryGesture = useRef<{ y: number; timer?: number; armed: boolean } | null>(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoMsg, setPhotoMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [name, setName] = useState(user?.name ?? '')
@@ -76,6 +89,8 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
   const [bioMsg, setBioMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   if (!open || !user) return null
+  const shownName = decoy ? DECOY_SELF.name : user.name
+  const shownAvatar = decoy ? DECOY_SELF.avatar : user.avatar
 
   const close = () => {
     setPage(null)
@@ -115,7 +130,10 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
     setSaved(true)
     window.setTimeout(() => setSaved(false), 1600)
   }
-  // Logging out asks for the PIN first whenever one is set
+  // Logging out asks for the PIN first whenever one is set.
+  // Real PIN or account password: the normal real-account log out.
+  // Decoy PIN: never logs the real account out, and never leaves the decoy side. In the decoy profile it just
+  // locks Chatter again; in the real app it switches to the decoy profile.
   const requestLogout = () => {
     if (hasPins) setConfirmOut(true)
     else {
@@ -123,38 +141,75 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
       logout()
     }
   }
+  const realLogout = () => { setConfirmOut(false); setPasswordOut(false); close(); logout() }
+  const decoyLogout = () => {
+    setConfirmOut(false)
+    close()
+    if (decoy) requestLock()
+    else requestDecoy()
+  }
+
+  const startRecovery = (e: React.PointerEvent) => {
+    recoveryGesture.current = { y: e.clientY, armed: false }
+    try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
+  }
+  const moveRecovery = (e: React.PointerEvent) => {
+    const g = recoveryGesture.current
+    if (!g || g.armed) return
+    if (g.y - e.clientY > 40) {
+      g.armed = true
+      g.timer = window.setTimeout(() => {
+        recoveryGesture.current = null
+        setRecoveryOpen(true)
+      }, 700)
+    }
+  }
+  const endRecovery = () => {
+    if (recoveryGesture.current?.timer) window.clearTimeout(recoveryGesture.current.timer)
+    recoveryGesture.current = null
+  }
 
   const accField = 'w-full rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3.5 py-3 text-sm outline-none ring-1 ring-transparent focus:ring-[rgb(var(--accent))]'
   const label = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--text-tertiary))]'
   const divider = 'divide-y divide-[rgb(var(--border))]'
 
-  const MENU: { id: Page; icon: React.ReactNode; title: string; desc: string; hideInDecoy?: boolean }[] = [
+  const MENU: { id: Page; icon: React.ReactNode; title: string; desc: string; hideInDecoy?: boolean; decoyOnly?: boolean }[] = [
     { id: 'profile', icon: <User size={16} />, title: 'Profile', desc: 'Photo, name, nickname, age and status', hideInDecoy: true },
     { id: 'account', icon: <KeyRound size={16} />, title: 'Account', desc: 'Password, email and security question', hideInDecoy: true },
     { id: 'interface', icon: <LayoutDashboard size={16} />, title: 'Interface', desc: 'Theme, layout, navigation, dashboard and presets' },
     { id: 'appearance', icon: dark ? <Moon size={16} /> : <Sun size={16} />, title: 'Appearance', desc: 'Text, colours, chat screen and animations' },
     { id: 'privacy', icon: <ShieldCheck size={16} />, title: 'Privacy & security', desc: 'Receipts, locks, PIN and decoy PIN', hideInDecoy: true },
     { id: 'notifications', icon: <Bell size={16} />, title: 'Notifications & sounds', desc: 'Previews, quick replies, sounds, alarms' },
-    ...(isNative() ? [{ id: 'permissions' as const, icon: <Smartphone size={16} />, title: 'App permissions', desc: 'Camera, microphone, notifications, fingerprint' }] : []),
+    ...(isNative() ? [{ id: 'permissions' as const, icon: <Smartphone size={16} />, title: 'App permissions', desc: 'Camera, microphone, notifications, fingerprint', hideInDecoy: true }] : []),
+    { id: 'time', icon: <Clock size={16} />, title: 'Time', desc: 'Show only real time on messages', decoyOnly: true },
     { id: 'gestures', icon: <Hand size={16} />, title: 'Chats & gestures', desc: 'Swipes, taps and shortcuts' },
     { id: 'ghost', icon: <Palette size={16} />, title: 'Ghost Canvas', desc: 'Ink, fade-out time and grid' },
     { id: 'decoy', icon: <EyeOff size={16} />, title: 'Decoy chats', desc: 'Edit what the decoy PIN shows', hideInDecoy: true },
     { id: 'pro', icon: <Crown size={16} />, title: 'Chatter Pro', desc: isPro ? 'Plan, focus mode and tools' : 'Unlock decoy profiles, canvas toolkit and more', hideInDecoy: true },
+    { id: 'tutorial', icon: <BookOpen size={16} />, title: 'Tutorial', desc: 'A beginner’s tour of Chatter' },
   ]
-  const items = MENU.filter((m) => !(decoy && m.hideInDecoy))
+  const items = MENU.filter((m) => !(decoy && m.hideInDecoy) && !(!decoy && m.decoyOnly))
   const current = MENU.find((m) => m.id === page)
 
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 md:items-center md:p-6" onClick={close}>
-      {confirmOut && (
-        <PinGate
-          title="Confirm log out"
-          subtitle="Enter your PIN to log out"
-          onCancel={() => setConfirmOut(false)}
-          onUnlock={() => { setConfirmOut(false); close(); logout() }}
-          onDecoy={() => { setConfirmOut(false); close(); logout() }}
-        />
-      )}
+      {/* these sit on top of the settings backdrop, so clicks inside them must not reach its "tap outside to close" */}
+      <div onClick={(e) => e.stopPropagation()}>
+        {confirmOut && (
+          <PinGate
+            title="Confirm log out"
+            subtitle="Enter your PIN to log out"
+            onCancel={() => setConfirmOut(false)}
+            onUnlock={realLogout}
+            onDecoy={decoyLogout}
+            onPassword={() => { setConfirmOut(false); setPasswordOut(true) }}
+          />
+        )}
+        {passwordOut && <PasswordConfirm onCancel={() => setPasswordOut(false)} onVerified={realLogout} />}
+        {tutorialOpen && <Tutorial decoy={decoy} onClose={() => setTutorialOpen(false)} />}
+        {recoveryOpen && decoy && <DecoyRecovery onClose={() => setRecoveryOpen(false)} />}
+        {zoomOpen && <PhotoZoom src={shownAvatar} name={shownName} onClose={() => setZoomOpen(false)} />}
+      </div>
       <div
         role="dialog"
         aria-label="Settings"
@@ -177,16 +232,18 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
           {!page && (
             <>
               <section className="flex items-center gap-4 px-5 py-5">
-                <img src={user.avatar} alt="Your avatar" className="h-16 w-16 rounded-full object-cover ring-4 ring-[rgb(var(--accent-soft))]" />
+                <button onClick={() => setZoomOpen(true)} aria-label="View your photo large" className="shrink-0 rounded-full transition hover:opacity-90">
+                  <img src={shownAvatar} alt="Your avatar" className="h-16 w-16 rounded-full object-cover ring-4 ring-[rgb(var(--accent-soft))]" />
+                </button>
                 <div className="min-w-0">
-                  <p className="truncate text-base font-bold">{user.name}</p>
+                  <p className="truncate text-base font-bold">{shownName}</p>
                   <p className="truncate text-sm text-[rgb(var(--text-secondary))]">{decoy ? 'Chatter' : user.email}</p>
                 </div>
               </section>
               <ul className={divider}>
                 {items.map((m) => (
                   <li key={m.id}>
-                    <button onClick={() => setPage(m.id)} className="flex w-full items-center text-left transition hover:bg-[rgb(var(--bg-panel-soft))]">
+                    <button onClick={() => (m.id === 'tutorial' ? setTutorialOpen(true) : setPage(m.id))} className="flex w-full items-center text-left transition hover:bg-[rgb(var(--bg-panel-soft))]">
                       <div className="flex-1">
                         <Row icon={m.icon} title={m.title} desc={m.desc} />
                       </div>
@@ -287,6 +344,20 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
                     ))}
                   </div>
                 </div>
+                <div className="px-4 py-3.5">
+                  <div className="flex items-center gap-3">
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-[rgb(var(--accent-soft))] text-[rgb(var(--accent))]"><Globe size={16} /></div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-sm font-semibold">Profile visibility</p>
+                      <p className="text-xs text-[rgb(var(--text-secondary))]">Public shows your nickname, age, status and about to people who open your profile. Private shows only your name and photo.</p>
+                    </div>
+                  </div>
+                  <div role="radiogroup" aria-label="Profile visibility" className="mt-3 grid grid-cols-2 gap-2">
+                    {([['public', 'Public'], ['private', 'Private']] as const).map(([id, t]) => (
+                      <button key={id} role="radio" aria-checked={user.profileVisibility === id} onClick={() => setProfileVisibility(id)} className={`rounded-xl px-3.5 py-2.5 text-sm font-semibold ring-1 transition ${user.profileVisibility === id ? 'bg-[rgb(var(--accent-soft))] text-[rgb(var(--accent))] ring-[rgb(var(--accent))]' : 'ring-[rgb(var(--border))] hover:bg-[rgb(var(--bg-panel-soft))]'}`}>{t}</button>
+                    ))}
+                  </div>
+                </div>
                 <Row icon={<Lock size={16} />} title="Fingerprint for confidential chats" desc="Use Face ID, Touch ID or your phone passcode to open confidential chats (your PIN always works too)">
                   <Toggle on={bioOn} onChange={toggleBio} label="Biometric lock" />
                 </Row>
@@ -314,7 +385,14 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
             </>
           )}
 
-          {page === 'permissions' && <AppPermissions />}
+          {page === 'time' && decoy && (
+            <div className={divider}>
+              <Row icon={<Clock size={16} />} title="Show only real time" desc="Messages always show their real time. Hand-edited times are ignored and “Edit time” is hidden.">
+                <Toggle on={decoyPrefs.realTimeOnly} onChange={(v) => setDecoyPrefs({ realTimeOnly: v })} label="Show only real time" />
+              </Row>
+            </div>
+          )}
+          {page === 'permissions' && !decoy && <AppPermissions />}
           {page === 'gestures' && <FeatureSettings section="gestures" />}
           {page === 'ghost' && (
             <>
@@ -327,6 +405,18 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
           {page === 'decoy' && <FeatureSettings section="decoy" />}
           {page === 'pro' && <ProSettings only="pro" onUpgrade={onUpgrade} />}
         </div>
+        {decoy && !page && (
+          <div
+            data-testid="recovery-zone"
+            aria-hidden
+            className="h-14 shrink-0"
+            style={{ touchAction: 'none' }}
+            onPointerDown={startRecovery}
+            onPointerMove={moveRecovery}
+            onPointerUp={endRecovery}
+            onPointerCancel={endRecovery}
+          />
+        )}
       </div>
     </div>
   )

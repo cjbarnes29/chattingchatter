@@ -13,6 +13,8 @@ export type User = {
   status: string
   /** how contacts see you: automatic, always online, or always offline */
   presence: 'auto' | 'online' | 'offline'
+  /** who can open your profile details: everyone, or only you */
+  profileVisibility: 'public' | 'private'
 }
 
 type ProfileRow = { name: string; avatar: string | null; about: string; nickname: string | null; age: number | null; status: string | null; presence_mode: string | null }
@@ -37,6 +39,9 @@ type AuthState = {
   sendPasswordCode: () => Promise<Result>
   changePasswordWithCode: (code: string, password: string) => Promise<Result>
   uploadAvatar: (file: File) => Promise<Result>
+  /** true when `password` is the signed-in account's password (used to confirm a log out from the decoy side) */
+  verifyPassword: (password: string) => Promise<boolean>
+  setProfileVisibility: (v: 'public' | 'private') => void
 }
 
 export const AVATARS = [
@@ -69,6 +74,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [profile, setProfile] = useState<ProfileRow | null>(null)
   const [ready, setReady] = useState(false)
+  const [visibility, setVisibility] = useState<'public' | 'private'>('public')
   // while a password-change code is being verified, ignore Supabase's "recovery" event so the normal app stays open
   const quiet = useRef(false)
   // A reset link carries "type=recovery" in the URL. Read it up front so the
@@ -112,6 +118,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid])
+
+  // Profile privacy lives in its own column; if the database doesn't have it yet, the device remembers the choice
+  useEffect(() => {
+    if (!uid) return
+    let cancelled = false
+    let local: 'public' | 'private' | null = null
+    try { local = localStorage.getItem(`chatter.profile.visibility.${uid}`) as 'public' | 'private' | null } catch { /* ignore */ }
+    if (local === 'public' || local === 'private') setVisibility(local)
+    supabase.from('profiles').select('profile_visibility').eq('id', uid).maybeSingle().then(({ data, error }) => {
+      if (cancelled || error || !data) return
+      setVisibility(data.profile_visibility === 'private' ? 'private' : 'public')
+    })
+    return () => { cancelled = true }
   }, [uid])
 
   // "Last active" heartbeat so contacts can see when you are online (while the app is open)
@@ -202,6 +222,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return error ? { ok: false, error: friendlyError(error.message) } : { ok: true }
   }, [])
 
+  const verifyPassword: AuthState['verifyPassword'] = useCallback(async (password) => {
+    const email = session?.user.email
+    if (!email || !password) return false
+    const { error } = await supabase.auth.signInWithPassword({ email, password })
+    return !error
+  }, [session])
+
+  const setProfileVisibility: AuthState['setProfileVisibility'] = useCallback(
+    (v) => {
+      setVisibility(v)
+      if (!uid) return
+      try { localStorage.setItem(`chatter.profile.visibility.${uid}`, v) } catch { /* ignore */ }
+      supabase.from('profiles').update({ profile_visibility: v }).eq('id', uid).then(() => {})
+    },
+    [uid],
+  )
+
   const logout = useCallback(() => {
     supabase.auth.signOut()
   }, [])
@@ -285,12 +322,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       age: profile.age ?? null,
       status: profile.status ?? '',
       presence: profile.presence_mode === 'online' || profile.presence_mode === 'offline' ? profile.presence_mode : 'auto',
+      profileVisibility: visibility,
     }
-  }, [session, profile])
+  }, [session, profile, visibility])
 
   const value = useMemo(
-    () => ({ user, signIn, signUp, verifySignupCode, resendSignupCode, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode }),
-    [user, signIn, signUp, verifySignupCode, resendSignupCode, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode],
+    () => ({ user, signIn, signUp, verifySignupCode, resendSignupCode, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode, verifyPassword, setProfileVisibility }),
+    [user, signIn, signUp, verifySignupCode, resendSignupCode, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode, verifyPassword, setProfileVisibility],
   )
 
   if (!ready) return null

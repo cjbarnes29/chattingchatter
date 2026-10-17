@@ -34,7 +34,7 @@ import { useEvents, fmtWhen, remindLabel } from './calendar'
 import { useChatStyle, setLocalPin, playSound, DEFAULT_PIN } from './chatStyle'
 import { useIsDark, toggleDark, startInterfaceSync, useInterface } from './interface'
 import Dashboard from './components/Dashboard'
-import { onLockRequest, forgetOpenedChats } from './appLock'
+import { onLockRequest, onDecoyRequest, onUnlockedMark, forgetOpenedChats } from './appLock'
 import { setDecoyOwner } from './decoyStore'
 
 export default function Root() {
@@ -84,6 +84,22 @@ function Gate() {
 
   // "Lock now" from the inbox shortcut or anywhere else
   useEffect(() => onLockRequest(() => setUnlocked('none')), [setUnlocked])
+  // a decoy PIN typed outside the lock screen (e.g. to confirm a log out) goes to the decoy profile
+  useEffect(() => onDecoyRequest(() => setUnlocked('decoy')), [setUnlocked])
+  useEffect(() => onUnlockedMark(() => setUnlocked('real')), [setUnlocked])
+
+  // Signing out always ends the unlocked state, so the next sign-in (maybe someone else) starts locked or fresh.
+  // A fresh sign-in with the password counts as unlocked; only app restarts and locks ask for the PIN.
+  const wasSignedOut = useRef(!user)
+  useEffect(() => {
+    if (!user) {
+      wasSignedOut.current = true
+      setUnlocked('none')
+    } else if (wasSignedOut.current) {
+      wasSignedOut.current = false
+      setUnlocked('real')
+    }
+  }, [user, setUnlocked])
 
   // Shake the phone to lock (needs a PIN and the "Shake to lock" gesture turned on)
   useEffect(() => {

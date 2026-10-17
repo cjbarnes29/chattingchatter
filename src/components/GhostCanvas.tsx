@@ -1,3 +1,4 @@
+import SecretInput from './SecretInput'
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react'
 import { Brush, StickyNote, Sticker, Gamepad2, X, Fingerprint, Pin, ShieldCheck, Crown, Lock, Film, Calendar, Save, Maximize2, Minus, Plus } from 'lucide-react'
 import { Undo2, Redo2, Send, Eraser, Hand, PenLine } from 'lucide-react'
@@ -122,6 +123,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
   const [showCal, setShowCal] = useState(false)
   const [savePrompt, setSavePrompt] = useState(false)
   const [pw, setPw] = useState('')
+  const [pw2, setPw2] = useState('')
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
   const wasHeld = useRef(false)
   const layer = useRef<HTMLDivElement>(null)
@@ -583,9 +585,10 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
 
   const saveMasterpiece = async () => {
     if (pw.length < 4) return setSaveMsg('Password needs at least 4 characters.')
+    if (pw !== pw2) return setSaveMsg('The two passwords do not match.')
     const payload = JSON.stringify({ strokes: strokes.current.filter((s) => Date.now() - s.t < s.life).map((s) => ({ pts: s.pts, color: s.color, brush: s.brush, w: s.w, opacity: s.opacity })), stickers, notes: notes.map(({ x, y, text, mine }) => ({ x, y, text, mine })), view })
     await pro.saveMasterpiece(`Canvas · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, payload, pw)
-    setPw(''); setSavePrompt(false); setSaveMsg('Saved encrypted on this device. Open it in Settings → Chatter Pro.')
+    setPw(''); setPw2(''); setSavePrompt(false); setSaveMsg('Saved encrypted on this device. Open it in Settings → Chatter Pro.')
     window.setTimeout(() => setSaveMsg(null), 3200)
   }
 
@@ -633,9 +636,10 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
       </div>
 
       {savePrompt && (
-        <div className="relative z-10 mx-4 mb-2 flex items-center gap-2 rounded-2xl bg-white/10 p-3 ring-1 ring-white/15">
+        <div className="relative z-10 mx-4 mb-2 flex flex-wrap items-center gap-2 rounded-2xl bg-white/10 p-3 ring-1 ring-white/15">
           <Lock size={14} className="text-[#7CF5C0]" />
-          <input type="password" value={pw} onChange={(e) => setPw(e.target.value)} placeholder="Masterpiece password" aria-label="Masterpiece password" className="min-w-0 flex-1 rounded-full bg-black/30 px-3 py-1.5 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
+          <SecretInput value={pw} onChange={setPw} placeholder="Masterpiece password" label="Masterpiece password" wrapClassName="min-w-[9rem] flex-1" autoComplete="new-password" className="rounded-full bg-black/30 px-3 py-1.5 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
+          <SecretInput value={pw2} onChange={setPw2} placeholder="Type it again" label="Confirm masterpiece password" wrapClassName="min-w-[9rem] flex-1" autoComplete="new-password" className="rounded-full bg-black/30 px-3 py-1.5 text-sm outline-none ring-1 ring-white/15 focus:ring-[#7CF5C0]" />
           <button onClick={saveMasterpiece} className="rounded-full bg-[#7CF5C0] px-3 py-1.5 text-xs font-bold text-black">Encrypt & save</button>
         </div>
       )}

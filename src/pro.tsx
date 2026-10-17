@@ -105,10 +105,16 @@ function load(email: string): ProData {
 export function ProProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const email = user?.email ?? ''
-  const [data, setData] = useState<ProData>(DEFAULT)
+  // read straight away so a locked app never renders unlocked for a moment before the saved PIN loads
+  const [data, setData] = useState<ProData>(() => (email ? load(email) : DEFAULT))
 
   useEffect(() => {
     if (email) setData(load(email))
+    else {
+      // signed out: nothing from the last account (PIN hashes, locked chats) may linger for the next sign-in
+      latest.current = DEFAULT
+      setData(DEFAULT)
+    }
   }, [email])
 
   // Every update starts from the newest copy, so quick changes in a row never undo each other.

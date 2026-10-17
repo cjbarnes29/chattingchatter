@@ -9,7 +9,7 @@ import CalendarPanel from './CalendarPanel'
 import type { CalEvent } from '../calendar'
 import { CalendarDays, Reply, MoreHorizontal, X as XIcon } from 'lucide-react'
 import { useEdits, editMessage } from '../edits'
-import { readGesturePrefs } from '../prefs'
+import { readGesturePrefs, useDecoyPrefs } from '../prefs'
 import { MessageSheet, PersonEditor } from './EditSheets'
 import { Palette, BarChart3 } from 'lucide-react'
 import { CreatePollModal, PollCard } from './Polls'
@@ -102,6 +102,8 @@ type Props = {
   chatActions?: ChatActions
   /** real chats can be made confidential; decoy chats can't */
   allowLock?: boolean
+  /** the decoy profile: no attachments, and times can be pinned to the real time */
+  decoy?: boolean
   polls?: {
     myId: string
     members: GroupMember[]
@@ -128,13 +130,15 @@ function StatusIcon({ status }: { status?: Message['status'] }) {
 const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
-export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, polls, calendar }: Props) {
+export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, decoy = false, polls, calendar }: Props) {
   const cstyle = useChatStyle()
   const pro = usePro()
   const opened = useSyncExternalStore(onOpenedChange, () => isChatOpened(rawChat.id))
   const confidential = allowLock && pro.lockedChatIds.includes(rawChat.id) && !opened
   const [styleOpen, setStyleOpen] = useState(false)
   const edits = useEdits()
+  const decoyPrefs = useDecoyPrefs()
+  const realTimeOnly = decoy && decoyPrefs.realTimeOnly
   const personEdit = edits.people[rawChat.id]
   const chat: Chat = useMemo(
     () => ({
@@ -145,10 +149,10 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         .filter((m) => !edits.msgs[m.id]?.deleted)
         .map((m) => {
           const e = edits.msgs[m.id]
-          return e ? { ...m, text: e.text ?? m.text, time: e.time ?? m.time } : m
+          return e ? { ...m, text: e.text ?? m.text, time: (realTimeOnly ? undefined : e.time) ?? m.time } : m
         }),
     }),
-    [rawChat, personEdit, edits.msgs],
+    [rawChat, personEdit, edits.msgs, realTimeOnly],
   )
   const [sheetMsg, setSheetMsg] = useState<string | null>(null)
   const [personOpen, setPersonOpen] = useState(false)
@@ -541,7 +545,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         <button type="button" aria-label="Emoji" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
           <Smile size={22} />
         </button>
-        <button type="button" aria-label="Attach" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
+        <button type="button" aria-label="Attach" disabled={decoy} title={decoy ? 'Attachments are not available here' : undefined} className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
           <Paperclip size={22} />
         </button>
         {polls && (
@@ -582,9 +586,9 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         const m = chat.messages.find((x) => x.id === sheetMsg)
         const raw = rawChat.messages.find((x) => x.id === sheetMsg)
         if (!m || !raw) return null
-        return <MessageSheet id={m.id} text={m.text} time={m.time} edit={edits.msgs[m.id]} tags={tagsOf(m)} gestures={{ longPress: true }} onClose={() => setSheetMsg(null)} onReply={() => setReplyTo(m.id)} />
+        return <MessageSheet noTimeEdit={realTimeOnly} id={m.id} text={m.text} time={m.time} edit={edits.msgs[m.id]} tags={tagsOf(m)} gestures={{ longPress: true }} onClose={() => setSheetMsg(null)} onReply={() => setReplyTo(m.id)} />
       })()}
-      {zoomOpen && <PhotoZoom src={chat.avatar} name={chat.name} onClose={() => setZoomOpen(false)} />}
+      {zoomOpen && <PhotoZoom src={chat.avatar} name={chat.name} onClose={() => setZoomOpen(false)} onInfo={chat.isGroup ? undefined : () => { setZoomOpen(false); setProfileOpen(true) }} />}
       {profileOpen && <ProfileSheet chat={chat} onClose={() => setProfileOpen(false)} onZoom={() => setZoomOpen(true)} onEditContact={() => { setProfileOpen(false); setPersonOpen(true) }} />}
       {personOpen && <PersonEditor chatId={rawChat.id} name={chat.name} avatar={chat.avatar} edited={!!personEdit} onClose={() => setPersonOpen(false)} />}
       {pollOpen && polls && <CreatePollModal onClose={() => setPollOpen(false)} onCreate={polls.onCreate} />}

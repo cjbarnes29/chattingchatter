@@ -8,7 +8,7 @@ import ContactsPanel from './ContactsPanel'
 import { usePro } from '../pro'
 import { limit } from '../entitlements'
 import { useAuth } from '../auth'
-import { addDecoy, sendDecoyMessage, useDecoyItems, useDecoyThreads } from '../decoyStore'
+import { addDecoy, sendDecoyMessage, useDecoyItems, useDecoyThreads, DECOY_SELF } from '../decoyStore'
 import { useChatStyle, setLocalPin, DEFAULT_PIN } from '../chatStyle'
 import { useBackHandler } from '../backNav'
 import { useIsDark, toggleDark } from '../interface'
@@ -83,6 +83,7 @@ export default function DecoyApp() {
             onToggleArchived={() => {}}
             isPro={isPro}
             onPinChat={(id, v) => setLocalPin(id, v)}
+            selfAvatar={DECOY_SELF.avatar}
           />
         </div>
         <Settings decoy open={settingsOpen} onClose={() => setSettingsOpen(false)} dark={dark} onToggleDark={toggleDark} onUpgrade={() => { setSettingsOpen(false); setUpgradeOpen(true) }} />
@@ -109,6 +110,7 @@ export default function DecoyApp() {
               onSend={(id, text) => sendDecoyMessage(id, text)}
               onUpgrade={() => setUpgradeOpen(true)}
               onPinChat={(v) => setLocalPin(activeChat.id, v)}
+              decoy
             />
           ) : (
             <div className="flex flex-1 flex-col items-center justify-center gap-4 bg-[rgb(var(--bg-chat))] p-10 text-center">
