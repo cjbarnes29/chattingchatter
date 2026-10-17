@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import { avatarFor } from './auth'
+import { isPublicId, normalizePublicId } from './publicId'
 import type { Chat, Message } from './data'
 import { readPrivacyPrefs } from './prefs'
 
@@ -181,11 +182,16 @@ export function useRealChats(myId: string) {
     [addRow, myId],
   )
 
-  const startChat = useCallback(async (email: string): Promise<{ ok: true; chatId: string } | { ok: false; error: string }> => {
-    const { data, error } = await supabase.rpc('find_profile_by_email', { p_email: email })
+  /** Starts a chat with a friend, found by their email or their ID# */
+  const startChat = useCallback(async (who: string): Promise<{ ok: true; chatId: string } | { ok: false; error: string }> => {
+    const byId = !who.includes('@')
+    if (byId && !isPublicId(who)) return { ok: false, error: 'Enter a valid email or an ID# like K7QM-4XZ2.' }
+    const { data, error } = byId
+      ? await supabase.rpc('find_profile_by_public_id', { p_id: normalizePublicId(who) })
+      : await supabase.rpc('find_profile_by_email', { p_email: who })
     if (error) return { ok: false, error: 'Could not search right now. Try again.' }
     const found = (data as Peer[] | null)?.[0]
-    if (!found) return { ok: false, error: 'No Chatter user with that email yet. Invite them to join!' }
+    if (!found) return { ok: false, error: byId ? 'No Chatter user with that ID#.' : 'No Chatter user with that email yet. Invite them to join!' }
     setPeers((p) => ({ ...p, [found.id]: found }))
     return { ok: true, chatId: REAL_PREFIX + found.id }
   }, [])

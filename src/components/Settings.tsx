@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard, Smartphone, Clock, BookOpen, Globe } from 'lucide-react'
+import { formatPublicId } from '../publicId'
+import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, Copy, Share2, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard, Smartphone, Clock, BookOpen, Globe } from 'lucide-react'
 import { useAuth } from '../auth'
 import { usePro } from '../pro'
 import ProSettings from './ProSettings'
@@ -78,6 +79,18 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
   const [photoMsg, setPhotoMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [name, setName] = useState(user?.name ?? '')
   const [about, setAbout] = useState(user?.about ?? '')
+  const [idCopied, setIdCopied] = useState(false)
+  const idText = user?.publicId ? `#${formatPublicId(user.publicId)}` : ''
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(idText)
+      setIdCopied(true)
+      setTimeout(() => setIdCopied(false), 1500)
+    } catch { /* clipboard blocked */ }
+  }
+  const shareId = () => {
+    navigator.share?.({ text: `Add me on Chatter: ${idText}` }).catch(() => {})
+  }
   const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [age, setAge] = useState(user?.age ? String(user.age) : '')
   const [status, setStatus] = useState(user?.status ?? '')
@@ -273,6 +286,19 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
                 </label>
                 <p className="text-sm text-[rgb(var(--text-secondary))]">{photoBusy ? 'Uploading photo…' : user.email}</p>
                 {photoMsg && <p role="status" className={`text-xs ${photoMsg.ok ? 'text-emerald-600' : 'text-rose-500'}`}>{photoMsg.text}</p>}
+                {user.publicId && (
+                  <div className="mt-1 w-full max-w-xs rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-3 text-center">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Your ID#</p>
+                    <p className="mt-0.5 select-all font-mono text-xl font-bold tracking-widest">#{formatPublicId(user.publicId)}</p>
+                    <p className="mt-1 text-xs text-[rgb(var(--text-secondary))]">Friends can add you with this instead of your email.</p>
+                    <div className="mt-2 flex justify-center gap-2">
+                      <button type="button" onClick={copyId} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--bg-panel))] px-3 py-1.5 text-xs font-semibold ring-1 ring-[rgb(var(--border))]"><Copy size={13} /> {idCopied ? 'Copied' : 'Copy'}</button>
+                      {typeof navigator !== 'undefined' && 'share' in navigator && (
+                        <button type="button" onClick={shareId} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--bg-panel))] px-3 py-1.5 text-xs font-semibold ring-1 ring-[rgb(var(--border))]"><Share2 size={13} /> Share</button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </section>
               <section className="space-y-4 px-5">
                 <label className="block">
