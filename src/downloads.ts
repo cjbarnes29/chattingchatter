@@ -4,7 +4,7 @@
 const RELEASES = 'https://github.com/cjbarnes29/chattingchatter/releases'
 export const DOWNLOADS = {
   playStore: '', // add your Google Play URL once published
-  androidApk: '/chatter.apk', // served by Netlify, redirects to the newest APK build
+  androidApk: 'https://github.com/cjbarnes29/chattingchatter/releases/download/latest-apk/chatter.apk', // stable APK, rebuilt from main by the release workflow
   windows: RELEASES + '/latest', // release page: pick the .exe
   mac: RELEASES + '/latest', // release page: pick the .dmg
   linux: RELEASES + '/latest', // release page: pick the .AppImage

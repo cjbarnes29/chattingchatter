@@ -46,7 +46,7 @@
 
     <!-- Asked at runtime, with an explanation first -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />          <!-- voice and video calls -->
-    <uses-permission android:name="android.permission.CAMERA" />                <!-- video calls, taking a photo to send -->
+    <uses-permission android:name="android.permission.CAMERA" />                <!-- video calls -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />    <!-- event reminders (Android 13+) -->
 
     <!-- No storage permission: files are picked and saved through the system file picker. -->

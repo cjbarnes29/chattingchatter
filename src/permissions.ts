@@ -13,7 +13,7 @@ export const WHY: Record<PermName, { title: string; text: string }> = {
   },
   camera: {
     title: 'Allow camera?',
-    text: 'Chatter uses the camera for video calls and to take a photo you choose to send. It’s only on while you use it.',
+    text: 'Chatter uses the camera for video calls. It’s only on while you’re on a video call.',
   },
   notifications: {
     title: 'Allow notifications?',
