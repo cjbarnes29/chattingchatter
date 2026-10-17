@@ -95,6 +95,12 @@ The APKs were unpacked and checked (manifest, permissions, components, signing c
 | Build type | Debug (`debuggable=true`) | Debug, until a release key is added |
 | Signing certificate | "CN=Android Debug", **a new one generated for every build** | Same, until a release key is added |
 
+### Seen on a phone (17 October 2026, test build from github.com in Chrome)
+
+> **App blocked to protect your device.** Chatter. Play Protect hasn't seen an app from this developer before. It may be unsafe. Installing this app may put your device at risk.
+
+This confirms cause 2 below: Play Protect doesn't recognise the **signing certificate**. Every CI build so far has been signed with a new, auto-generated debug certificate, so every build looks like the first app from a brand-new developer. Removing the nested APK (cause 1) was still necessary, but it doesn't change this message. Only a permanent signing key and a known developer identity do.
+
 ### Likely causes, in order
 
 1. **An APK hidden inside the APK (confirmed, fixed).** An app that carries another installable app in its files is how "dropper" malware is built. Play Protect scans unknown apps for this, so this alone is enough to get the app blocked. This was a packaging mistake, not malicious code. Nothing in the app ever opened or installed the inner APK.
@@ -142,7 +148,8 @@ Never commit the keystore or passwords to the repository.
 | Final permission list in the built APK (aapt2) | Exactly the list above; no storage, location, contacts or exact-alarm permissions |
 | Browser tests of the permission flow, using a stand-in for the native plugin (29 checks) | All pass: explanation shown before Android's prompt and nothing requested until Continue; Not now requests nothing; "don't ask again" leads to Open phone settings; already-blocked goes straight to settings help; video call needs camera and mic, voice call only mic; BiometricPrompt success, cancel, lockout and not-enrolled; notification permission; App permissions page states and buttons; no horizontal scroll at 390 px; no page errors |
 | TypeScript, ESLint, `vite build` | No new errors (same counts as `main`) |
-| Play Protect investigation: the old stable APK and the new build unpacked and compared | Old APK carried two nested APKs; the new build carries none (see [Google Play Protect](#google-play-protect)). **Installation with Play Protect has not been verified on a phone yet.** |
+| Play Protect investigation: the old stable APK and the new build unpacked and compared | Old APK carried two nested APKs; the new build carries none (see [Google Play Protect](#google-play-protect)). |
+| Install on a phone with Play Protect on (test build, 17 Oct) | **Blocked:** "Play Protect hasn't seen an app from this developer before." Needs a permanent release key and developer verification (see [Google Play Protect](#google-play-protect)). Not yet resolved. |
 
 ### Not done yet: needs a real phone
 
