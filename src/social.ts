@@ -367,18 +367,27 @@ export function useStories(myId: string) {
 export type CallMedia = 'voice' | 'video'
 export type CallState = 'idle' | 'calling' | 'ringing' | 'connecting' | 'connected' | 'ended'
 
+// Optional TURN relay (VITE_TURN_URL / VITE_TURN_USER / VITE_TURN_PASS) so calls work behind
+// strict NATs and mobile carriers. Falls back to STUN only when not configured.
+const TURN_URL = import.meta.env.VITE_TURN_URL as string | undefined
 const RTC_CONFIG: RTCConfiguration = {
   iceServers: [
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
+    ...(TURN_URL
+      ? [{ urls: TURN_URL.split(','), username: import.meta.env.VITE_TURN_USER as string | undefined, credential: import.meta.env.VITE_TURN_PASS as string | undefined }]
+      : []),
   ],
 }
+
+const RECONNECT_GRACE_MS = 8_000
+const RING_TIMEOUT_MS = 45_000
 
 export function useCall(myId: string) {
   const [state, setState] = useState<CallState>('idle')
   const [media, setMedia] = useState<CallMedia>('voice')
   const [peerId, setPeerId] = useState<string | null>(null)
-  const [callId, setCallId] = useState<string | null>(null)
+  const [, setCallId] = useState<string | null>(null)
   const [localStream, setLocalStream] = useState<MediaStream | null>(null)
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null)
   const [muted, setMuted] = useState(false)
@@ -390,6 +399,31 @@ export function useCall(myId: string) {
   const pendingIce = useRef<RTCIceCandidateInit[]>([])
   const localRef = useRef<MediaStream | null>(null)
   const callRef = useRef<{ id: string | null; peer: string | null; media: CallMedia }>({ id: null, peer: null, media: 'voice' })
+  const incomingRef = useRef<typeof incoming>(null)
+  const earlyIce = useRef<Record<string, RTCIceCandidateInit[]>>({})
+  const idleTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dropTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const dropRef = useRef<() => void>(() => {})
+  const [facing, setFacing] = useState<'user' | 'environment'>('user')
+  const [connectedAt, setConnectedAt] = useState<number | null>(null)
+
+  const setIncomingBoth = useCallback((v: typeof incoming) => {
+    incomingRef.current = v
+    setIncoming(v)
+  }, [])
+
+  // return to idle after a short "ended" screen; a newer call cancels the pending reset
+  const scheduleIdle = useCallback((ms: number) => {
+    if (idleTimer.current) clearTimeout(idleTimer.current)
+    idleTimer.current = setTimeout(() => {
+      idleTimer.current = null
+      setState('idle')
+    }, ms)
+  }, [])
+  const cancelIdle = useCallback(() => {
+    if (idleTimer.current) clearTimeout(idleTimer.current)
+    idleTimer.current = null
+  }, [])
 
   const send = useCallback(
     async (to: string, cid: string, kind: string, mediaType: CallMedia, payload: unknown = null) => {
@@ -399,6 +433,10 @@ export function useCall(myId: string) {
   )
 
   const teardown = useCallback(() => {
+    if (dropTimer.current) clearTimeout(dropTimer.current)
+    dropTimer.current = null
+    setConnectedAt(null)
+    setFacing('user')
     pc.current?.getSenders().forEach((s) => s.track?.stop())
     pc.current?.close()
     pc.current = null
@@ -422,11 +460,17 @@ export function useCall(myId: string) {
         setRemoteStream(s ?? new MediaStream([e.track]))
       }
       conn.onconnectionstatechange = () => {
-        if (conn.connectionState === 'connected') setState('connected')
-        if (conn.connectionState === 'failed' || conn.connectionState === 'disconnected') {
-          setError('The connection dropped.')
-          setState('ended')
-          teardown()
+        if (pc.current !== conn) return
+        if (conn.connectionState === 'connected') {
+          if (dropTimer.current) clearTimeout(dropTimer.current)
+          dropTimer.current = null
+          setState('connected')
+          setConnectedAt((t) => t ?? Date.now())
+        } else if (conn.connectionState === 'disconnected') {
+          // brief network blips recover on their own: give it a moment before giving up
+          if (!dropTimer.current) dropTimer.current = setTimeout(() => dropRef.current(), RECONNECT_GRACE_MS)
+        } else if (conn.connectionState === 'failed') {
+          dropRef.current()
         }
       }
       pc.current = conn
@@ -438,7 +482,7 @@ export function useCall(myId: string) {
   const getMedia = useCallback(async (mediaType: CallMedia) => {
     await ensureMedia(mediaType === 'video')
     const stream = await navigator.mediaDevices.getUserMedia({
-      audio: true,
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       video: mediaType === 'video' ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false,
     })
     localRef.current = stream
@@ -449,22 +493,30 @@ export function useCall(myId: string) {
   const endCall = useCallback(
     async (notify = true) => {
       const { id, peer, media: m } = callRef.current
-      if (notify && id && peer) await send(peer, id, 'hangup', m)
+      // reset everything first so the UI never waits on the network to close
       teardown()
       callRef.current = { id: null, peer: null, media: 'voice' }
       setPeerId(null)
       setCallId(null)
-      setIncoming(null)
+      setIncomingBoth(null)
       setState('ended')
-      setTimeout(() => setState('idle'), 1200)
+      scheduleIdle(1200)
+      if (notify && id && peer) await send(peer, id, 'hangup', m).catch(() => {})
     },
-    [send, teardown],
+    [send, teardown, setIncomingBoth, scheduleIdle],
   )
+  useEffect(() => {
+    dropRef.current = () => {
+      setError('The connection dropped.')
+      void endCall(true)
+    }
+  }, [endCall])
 
   // place a call
   const startCall = useCallback(
     async (peer: string, mediaType: CallMedia) => {
       if (state !== 'idle' && state !== 'ended') return
+      cancelIdle()
       setError(null)
       setMedia(mediaType)
       setPeerId(peer)
@@ -486,11 +538,12 @@ export function useCall(myId: string) {
             : 'Could not start the call. Check your microphone and camera.',
         )
         teardown()
+        callRef.current = { id: null, peer: null, media: 'voice' }
         setState('ended')
-        setTimeout(() => setState('idle'), 2000)
+        scheduleIdle(2000)
       }
     },
-    [state, getMedia, createPc, send, teardown],
+    [state, getMedia, createPc, send, teardown, cancelIdle, scheduleIdle],
   )
 
   // accept an incoming call
@@ -498,17 +551,21 @@ export function useCall(myId: string) {
     if (!incoming) return
     setError(null)
     const { callId: cid, from, media: mediaType, offer } = incoming
+    cancelIdle()
     setMedia(mediaType)
     setPeerId(from)
     setCallId(cid)
     callRef.current = { id: cid, peer: from, media: mediaType }
-    setIncoming(null)
+    setIncomingBoth(null)
     setState('connecting')
     try {
       const stream = await getMedia(mediaType)
       const conn = createPc(from, cid, mediaType)
       stream.getTracks().forEach((t) => conn.addTrack(t, stream))
       await conn.setRemoteDescription(offer)
+      // candidates that arrived while the phone was still ringing
+      pendingIce.current = [...(earlyIce.current[cid] ?? []), ...pendingIce.current]
+      delete earlyIce.current[cid]
       for (const c of pendingIce.current) await conn.addIceCandidate(c).catch(() => {})
       pendingIce.current = []
       const answer = await conn.createAnswer()
@@ -516,18 +573,24 @@ export function useCall(myId: string) {
       await send(from, cid, 'answer', mediaType, answer)
     } catch {
       setError('Allow microphone/camera access to answer the call.')
-      await send(from, cid, 'decline', mediaType)
+      await send(from, cid, 'decline', mediaType).catch(() => {})
       teardown()
+      callRef.current = { id: null, peer: null, media: 'voice' }
+      setPeerId(null)
+      setCallId(null)
       setState('ended')
-      setTimeout(() => setState('idle'), 2000)
+      scheduleIdle(2000)
     }
-  }, [incoming, getMedia, createPc, send, teardown])
+  }, [incoming, getMedia, createPc, send, teardown, cancelIdle, scheduleIdle, setIncomingBoth])
 
   const declineCall = useCallback(async () => {
     if (!incoming) return
-    await send(incoming.from, incoming.callId, 'decline', incoming.media)
-    setIncoming(null)
-  }, [incoming, send])
+    const { from, callId: cid, media: m } = incoming
+    delete earlyIce.current[cid]
+    setIncomingBoth(null)
+    setState('idle')
+    await send(from, cid, 'decline', m).catch(() => {})
+  }, [incoming, send, setIncomingBoth])
 
   // listen for signals addressed to me
   useEffect(() => {
@@ -544,12 +607,23 @@ export function useCall(myId: string) {
             await send(s.sender_id, s.call_id, 'decline', s.media)
             return
           }
-          setIncoming({ callId: s.call_id, from: s.sender_id, media: s.media, offer: s.payload })
+          cancelIdle()
+          setIncomingBoth({ callId: s.call_id, from: s.sender_id, media: s.media, offer: s.payload })
           setMedia(s.media)
           setState('ringing')
           return
         }
-        if (callRef.current.id !== s.call_id) return
+        // ringing but not accepted yet: keep early ICE, and drop the ring if the caller cancels
+        if (callRef.current.id !== s.call_id) {
+          if (s.kind === 'ice') (earlyIce.current[s.call_id] ??= []).push(s.payload)
+          else if (s.kind === 'hangup' && incomingRef.current?.callId === s.call_id) {
+            delete earlyIce.current[s.call_id]
+            setIncomingBoth(null)
+            setError(null)
+            setState('idle')
+          }
+          return
+        }
 
         if (s.kind === 'answer' && pc.current) {
           await pc.current.setRemoteDescription(s.payload).catch(() => {})
@@ -563,18 +637,18 @@ export function useCall(myId: string) {
           setError(s.kind === 'decline' ? 'Call declined.' : null)
           teardown()
           callRef.current = { id: null, peer: null, media: 'voice' }
-          setIncoming(null)
+          setIncomingBoth(null)
           setPeerId(null)
           setCallId(null)
           setState('ended')
-          setTimeout(() => setState('idle'), 1500)
+          scheduleIdle(1500)
         }
       })
       .subscribe()
     return () => {
       supabase.removeChannel(ch)
     }
-  }, [myId, send, teardown])
+  }, [myId, send, teardown, cancelIdle, scheduleIdle, setIncomingBoth])
 
   // a ringing call that nobody answers ends by itself
   useEffect(() => {
@@ -582,9 +656,23 @@ export function useCall(myId: string) {
     const t = setTimeout(() => {
       setError('No answer.')
       endCall(true)
-    }, 40_000)
+    }, RING_TIMEOUT_MS)
     return () => clearTimeout(t)
   }, [state, endCall])
+
+  // an invite the user never answers (or whose caller vanished) stops ringing
+  useEffect(() => {
+    if (state !== 'ringing') return
+    const t = setTimeout(() => {
+      const inc = incomingRef.current
+      if (!inc) return
+      delete earlyIce.current[inc.callId]
+      setIncomingBoth(null)
+      setState('idle')
+      void send(inc.from, inc.callId, 'decline', inc.media).catch(() => {})
+    }, RING_TIMEOUT_MS + 5_000)
+    return () => clearTimeout(t)
+  }, [state, send, setIncomingBoth])
 
   const toggleMute = useCallback(() => {
     localRef.current?.getAudioTracks().forEach((t) => (t.enabled = !t.enabled))
@@ -595,6 +683,29 @@ export function useCall(myId: string) {
     localRef.current?.getVideoTracks().forEach((t) => (t.enabled = !t.enabled))
     setCamOff((c) => !c)
   }, [])
+
+  // switch between front and back camera without renegotiating
+  const flipCamera = useCallback(async () => {
+    const cur = localRef.current
+    const sender = pc.current?.getSenders().find((x) => x.track?.kind === 'video')
+    if (!cur || !sender) return
+    const next = facing === 'user' ? 'environment' : 'user'
+    try {
+      const fresh = await navigator.mediaDevices.getUserMedia({ video: { facingMode: next } })
+      const track = fresh.getVideoTracks()[0]
+      cur.getVideoTracks().forEach((t) => {
+        t.stop()
+        cur.removeTrack(t)
+      })
+      cur.addTrack(track)
+      await sender.replaceTrack(track)
+      setLocalStream(new MediaStream(cur.getTracks()))
+      setFacing(next)
+      setCamOff(false)
+    } catch {
+      setError('Could not switch camera.')
+    }
+  }, [facing])
 
   // clean up on unmount
   useEffect(() => () => teardown(), [teardown])
@@ -615,6 +726,8 @@ export function useCall(myId: string) {
     endCall: () => endCall(true),
     toggleMute,
     toggleCam,
+    flipCamera,
+    connectedAt,
     dismissError: () => setError(null),
   }
 }

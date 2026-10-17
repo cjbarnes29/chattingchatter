@@ -77,10 +77,6 @@ export function inviteWait(s: Session, now: number) {
   return Math.max(0, INVITE_COOLDOWN - Math.floor((now - s.invitedAt) / 1000))
 }
 
-/** The hold-to-stay countdown only runs when someone could actually be held for: no real room
- *  (demo canvas) or the other person is here. It never runs while you wait alone. */
-export const graceRuns = (hasRoom: boolean, s: Session) => !hasRoom || s.peer === 'present'
-
 /** "Close when I leave" only wipes when there is something to protect: the other person is here,
  *  or there is drawing/notes/stickers/game moves on the canvas. An empty canvas you're waiting on
  *  can be left and come back to. */

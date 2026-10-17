@@ -15,6 +15,8 @@ export type User = {
   presence: 'auto' | 'online' | 'offline'
   /** who can open your profile details: everyone, or only you */
   profileVisibility: 'public' | 'private'
+  /** permanent shareable ID#, e.g. K7QM4XZ2 (empty until the database has it) */
+  publicId: string
 }
 
 type ProfileRow = { name: string; avatar: string | null; about: string; nickname: string | null; age: number | null; status: string | null; presence_mode: string | null }
@@ -108,19 +110,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (!uid) return
     let cancelled = false
     supabase
-      .from('profiles')
-      .select('name, avatar, about, nickname, age, status, presence_mode')
-      .eq('id', uid)
-      .maybeSingle()
+      .rpc('get_profiles', { p_ids: [uid] })
       .then(({ data }) => {
         if (cancelled) return
-        setProfile((data as ProfileRow | null) ?? { name: session?.user.email?.split('@')[0] ?? 'Me', avatar: null, about: 'Hey there! I am using Chatter.', nickname: '', age: null, status: '', presence_mode: 'auto' })
+        setProfile(((data as ProfileRow[] | null)?.[0]) ?? { name: session?.user.email?.split('@')[0] ?? 'Me', avatar: null, about: 'Hey there! I am using Chatter.', nickname: '', age: null, status: '', presence_mode: 'auto' })
         setReady(true)
       })
     return () => {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid])
+
+  // The shareable ID# is read on its own so an older database without the column still signs in
+  const [publicId, setPublicId] = useState('')
+  useEffect(() => {
+    if (!uid) { setPublicId(''); return }
+    let cancelled = false
+    supabase.from('profiles').select('public_id').eq('id', uid).maybeSingle().then(({ data, error }) => {
+      if (!cancelled && !error && data?.public_id) setPublicId(data.public_id as string)
+    })
+    return () => { cancelled = true }
   }, [uid])
 
   // Profile privacy lives in its own column; if the database doesn't have it yet, the device remembers the choice
@@ -329,8 +339,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       status: profile.status ?? '',
       presence: profile.presence_mode === 'online' || profile.presence_mode === 'offline' ? profile.presence_mode : 'auto',
       profileVisibility: visibility,
+      publicId,
     }
-  }, [session, profile, visibility])
+  }, [session, profile, visibility, publicId])
 
   const value = useMemo(
     () => ({ user, signIn, signUp, verifySignupCode, resendSignupCode, logout, recovering, requestReset, verifyResetCode, setNewPassword, changeEmail, updateProfile, uploadAvatar, sendPasswordCode, changePasswordWithCode, verifyPassword, setProfileVisibility }),

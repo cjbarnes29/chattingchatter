@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.net.Uri;
 import android.os.Build;
 import android.provider.Settings;
+import android.view.WindowManager;
 import androidx.activity.result.ActivityResult;
 import androidx.biometric.BiometricManager;
 import androidx.biometric.BiometricPrompt;
@@ -187,6 +188,17 @@ public class ChatterDevicePlugin extends Plugin {
             // permission was withdrawn between the check and now
         }
         call.resolve();
+    }
+
+    /** Blocks screenshots, screen recording and the app-switcher preview while the privacy option is on. */
+    @PluginMethod
+    public void setSecure(PluginCall call) {
+        final boolean enabled = Boolean.TRUE.equals(call.getBoolean("enabled", false));
+        getActivity().runOnUiThread(() -> {
+            if (enabled) getActivity().getWindow().setFlags(WindowManager.LayoutParams.FLAG_SECURE, WindowManager.LayoutParams.FLAG_SECURE);
+            else getActivity().getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE);
+            call.resolve();
+        });
     }
 
     /** Lets the user choose where to save a text file (system file picker; no storage permission needed). */

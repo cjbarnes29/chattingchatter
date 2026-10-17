@@ -28,13 +28,13 @@ const commit = (next: Edits) => {
 export const editMessage = (id: string, patch: MsgEdit) =>
   commit({ ...state, msgs: { ...state.msgs, [id]: { ...state.msgs[id], ...patch } } })
 export const resetMessage = (id: string) => {
-  const { [id]: _drop, ...rest } = state.msgs
+  const rest = Object.fromEntries(Object.entries(state.msgs).filter(([k]) => k !== id))
   commit({ ...state, msgs: rest })
 }
 export const editPerson = (chatId: string, patch: PersonEdit) =>
   commit({ ...state, people: { ...state.people, [chatId]: { ...state.people[chatId], ...patch } } })
 export const resetPerson = (chatId: string) => {
-  const { [chatId]: _drop, ...rest } = state.people
+  const rest = Object.fromEntries(Object.entries(state.people).filter(([k]) => k !== chatId))
   commit({ ...state, people: rest })
 }
 

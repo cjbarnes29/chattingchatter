@@ -134,7 +134,7 @@ export default function AuthScreen() {
   }
 
   return (
-    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-[rgb(var(--bg-app))] p-4">
+    <div className="relative flex min-h-screen safe-page w-full items-center justify-center overflow-hidden bg-[rgb(var(--bg-app))] p-4">
       <div className="pointer-events-none absolute -top-32 -left-24 h-96 w-96 rounded-full bg-[rgb(var(--accent))] opacity-20 blur-3xl" />
       <div className="pointer-events-none absolute -bottom-32 -right-24 h-96 w-96 rounded-full bg-[rgb(var(--accent-soft))] opacity-80 blur-3xl" />
 

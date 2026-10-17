@@ -75,11 +75,15 @@ export default function ContactsPanel({ contacts, onClose, onOpenChat, onFavorit
         <div className="space-y-3 px-6 pb-4">
           <form onSubmit={add} className="flex gap-2">
             <input
-              type="email"
+              type="text"
+              inputMode="email"
+              autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              placeholder="Add by email"
+              placeholder="Add by email or ID#"
               className="min-w-0 flex-1 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3.5 py-2.5 text-sm outline-none ring-1 ring-transparent focus:ring-[rgb(var(--accent))]"
             />
             <button type="submit" disabled={busy} aria-label="Add contact" className="flex items-center gap-1.5 rounded-xl bg-[rgb(var(--accent))] px-3.5 text-sm font-semibold text-[rgb(var(--accent-foreground))] disabled:opacity-60">
@@ -93,7 +97,7 @@ export default function ContactsPanel({ contacts, onClose, onOpenChat, onFavorit
         </div>
 
         <div className="flex-1 overflow-y-auto px-4 pb-6">
-          {contacts.length === 0 && <p className="px-2 py-8 text-center text-sm text-[rgb(var(--text-secondary))]">No contacts yet. Add someone by email or from your phone.</p>}
+          {contacts.length === 0 && <p className="px-2 py-8 text-center text-sm text-[rgb(var(--text-secondary))]">No contacts yet. Add someone by email, ID# or from your phone.</p>}
           {favorites.length > 0 && (<><p className="px-2 pt-2 pb-1 text-xs font-bold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Favorites</p><ul>{favorites.map((c) => <Row key={c.id} c={c} />)}</ul></>)}
           {others.length > 0 && (<><p className="px-2 pt-3 pb-1 text-xs font-bold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Contacts</p><ul>{others.map((c) => <Row key={c.id} c={c} />)}</ul></>)}
           {blocked.length > 0 && (<><p className="px-2 pt-3 pb-1 text-xs font-bold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Blocked</p><ul>{blocked.map((c) => <Row key={c.id} c={c} />)}</ul></>)}

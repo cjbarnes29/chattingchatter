@@ -13,6 +13,9 @@ import { PinGate } from './components/PinGate'
 import DecoyApp from './components/DecoyApp'
 import ExitDialog from './components/ExitDialog'
 import GroupCallOverlay from './components/GroupCallOverlay'
+import { useInboxPrivacy, readInboxPrivacy } from './inboxPrivacy'
+import { useOnline } from './online'
+import { isNative, Device } from './native'
 import { useBackTrap, useBackHandler, exitApp } from './backNav'
 import { bioUnlockEnabled, biometricEnrolled } from './biometric'
 import { useGroupCall } from './groupCall'
@@ -27,9 +30,13 @@ import { useGroups, useStories, useCall, GROUP_PREFIX, type Story, type Group } 
 import { CreateGroupModal, GroupSettingsModal } from './components/GroupPanels'
 import { StoriesRow, StoryComposer, StoryViewer } from './components/Stories'
 import CallOverlay from './components/CallOverlay'
+import GhostLauncher from './components/GhostLauncher'
+import GhostInviteOverlay from './components/GhostInviteOverlay'
+import { useGhostInvites, type GhostNotify } from './ghostInvites'
+import { readGhostPrefs } from './prefs'
 import { useContacts, findRegisteredByEmails, pickPhoneContacts } from './contacts'
 import ContactsPanel from './components/ContactsPanel'
-import { Archive, BellRing, X, ShieldAlert } from 'lucide-react'
+import { BellRing, X, ShieldAlert } from 'lucide-react'
 import { useEvents, fmtWhen, remindLabel } from './calendar'
 import { useChatStyle, setLocalPin, playSound, DEFAULT_PIN } from './chatStyle'
 import { useIsDark, toggleDark, startInterfaceSync, useInterface } from './interface'
@@ -136,7 +143,7 @@ function Gate() {
     <>
       {body}
       {unlocked === 'real' && intrusions.length > 0 && (
-        <div role="alert" className="fixed inset-x-3 top-3 z-[80] mx-auto flex max-w-md items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel))] p-4 shadow-2xl ring-2 ring-rose-500">
+        <div role="alert" className="fixed inset-x-3 top-[calc(var(--sat)+0.75rem)] z-[80] mx-auto flex max-w-md items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel))] p-4 shadow-2xl ring-2 ring-rose-500">
           <ShieldAlert size={20} className="mt-0.5 shrink-0 text-rose-500" />
           <div className="min-w-0 flex-1 text-sm">
             <p className="font-bold">{intrusions.length} wrong PIN{intrusions.length === 1 ? ' was' : 's were'} tried</p>
@@ -195,6 +202,11 @@ function App() {
   })
   const contactApi = useContacts(user!.id)
   const [contactsOpen, setContactsOpen] = useState(false)
+  const [callMin, setCallMin] = useState(false)
+  const online = useOnline()
+  const inboxPrivacy = useInboxPrivacy(user!.id)
+  const [inBackground, setInBackground] = useState(false)
+  const [gcallMin, setGcallMin] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
   // Direct chats: hide blocked people, apply archive/pin/delete-history prefs from the contacts store
@@ -225,7 +237,7 @@ function App() {
       if (!first && seen.current[c.id] !== undefined && seen.current[c.id] !== last.id && !last.fromMe && !c.muted) {
         playSound(c.id)
         // confidential chats never show their text outside the chat
-        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews && !lockedChatIds.includes(c.id) ? last.text : 'New message' })
+        if (c.id !== activeId && readNotifPrefs().quickReply) setNotice({ chatId: c.id, text: readNotifPrefs().previews && !readInboxPrivacy(user!.id).hidePreviews && !lockedChatIds.includes(c.id) ? last.text : 'New message' })
       }
       seen.current[c.id] = last.id
     }
@@ -283,11 +295,13 @@ function App() {
   const placeCall = (media: 'voice' | 'video') => {
     const peer = peerOf(activeId)
     if (!peer) return
+    setCallMin(false)
     call.startCall(peer, media)
   }
   const placeGroupCall = (media: 'voice' | 'video') => {
     if (!activeId?.startsWith(GROUP_PREFIX)) return
     const gid = activeId.slice(GROUP_PREFIX.length)
+    setGcallMin(false)
     void gcall.start(gid, media)
     groupApi.sendGroupMessage(gid, media === 'video' ? 'Started a group video call. Open this chat to join.' : 'Started a group voice call. Open this chat to join.')
   }
@@ -370,9 +384,68 @@ function App() {
   const activeGroup = activeId?.startsWith(GROUP_PREFIX) ? groupApi.groups.find((g) => g.id === activeId.slice(GROUP_PREFIX.length)) ?? null : null
   const settingsGroup = groupSettingsId ? groupApi.groups.find((g) => g.id === groupSettingsId) ?? null : null
 
+  // Inbox privacy: blank the screen while Chatter is in the background, and block capture on Android
+  useEffect(() => {
+    const onVis = () => setInBackground(document.visibilityState === 'hidden')
+    document.addEventListener('visibilitychange', onVis)
+    return () => document.removeEventListener('visibilitychange', onVis)
+  }, [])
+  useEffect(() => {
+    if (!isNative() || !inboxPrivacy.blockCapture) return
+    void Device.setSecure({ enabled: true }).catch(() => {})
+    return () => { void Device.setSecure({ enabled: false }).catch(() => {}) }
+  }, [inboxPrivacy.blockCapture])
+
+  // ---- Ghost Canvas invitations: pick a person, they accept, then the canvas opens for both ----
+  const [ghostLauncher, setGhostLauncher] = useState<{ initialId: string | null } | null>(null)
+  const ghost = useGhostInvites(
+    user!.id,
+    (from) => {
+      const mode = readGhostPrefs().invites
+      if (mode === 'off' || contactApi.blockedIds.has(from)) return false
+      return mode === 'everyone' || contactApi.contacts.some((c) => c.id === from && !c.blocked)
+    },
+    (from) => real.chats.find((c) => c.id === REAL_PREFIX + from)?.name ?? contactApi.contacts.find((c) => c.id === from)?.name ?? 'Someone',
+  )
+  const ghostPeerChat = ghost.peerId ? real.chats.find((c) => c.id === REAL_PREFIX + ghost.peerId) : null
+  const ghostPeerContact = ghost.peerId ? contactApi.contacts.find((c) => c.id === ghost.peerId) : null
+  const ghostPeople = useMemo(() => {
+    const chatsOnly = real.chats.filter((c) => c.id.startsWith(REAL_PREFIX) && !c.isGroup)
+    const known = new Set(chatsOnly.map((c) => c.id))
+    const extra = contactApi.contacts
+      .filter((c) => !c.blocked && !known.has(REAL_PREFIX + c.id))
+      .map((c): Chat => ({ id: REAL_PREFIX + c.id, name: c.name, avatar: c.avatar, online: false, unread: 0, messages: [] }))
+    return [...chatsOnly, ...extra]
+  }, [real.chats, contactApi.contacts])
+  const refreshAll = async () => {
+    await Promise.allSettled([real.refresh(), groupApi.reload(), contactApi.reload()])
+  }
+  const inviteToGhost = async (chatId: string, notify: GhostNotify) => ghost.invite(chatId.slice(REAL_PREFIX.length), notify)
+  // when the invited person says yes, both sides land in that conversation and its canvas opens
+  const ghostActivePeer = ghost.active ? ghost.peerId : null
+  useEffect(() => {
+    if (ghostActivePeer) openChat(REAL_PREFIX + ghostActivePeer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ghostActivePeer])
+
+  // a finished call must never leave a stale "minimized" flag for the next one
+  useEffect(() => {
+    if (call.state === 'idle') setCallMin(false)
+  }, [call.state])
+  useEffect(() => {
+    if (!gcall.active) setGcallMin(false)
+  }, [gcall.active])
+
   // Back button: close the top-most sheet first, then leave the chat, and only then offer to exit
   useBackHandler(() => {
-    if (gcall.active) return true
+    // a live call is minimized by Back (never trapped); once minimized, Back works on the screen underneath
+    if (gcall.active && !gcallMin) { setGcallMin(true); return true }
+    if (call.state === 'ringing' || call.incoming) return true
+    if (ghost.incoming) { void ghost.decline(); return true }
+    if (ghost.outgoing) { void ghost.cancel(); return true }
+    if (ghostLauncher) { setGhostLauncher(null); return true }
+    if (ghost.active) { void ghost.end(); return true }
+    if ((call.state === 'calling' || call.state === 'connecting' || call.state === 'connected') && !callMin) { setCallMin(true); return true }
     if (viewStory) { setViewStory(null); return true }
     if (composerOpen) { setComposerOpen(false); return true }
     if (groupSettingsId) { setGroupSettingsId(null); return true }
@@ -390,14 +463,20 @@ function App() {
   const noticeChat = notice ? chats.find((c) => c.id === notice.chatId) : null
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[rgb(var(--bg-app))] md:p-4">
+    <div className="safe-shell flex w-full overflow-hidden bg-[rgb(var(--bg-app))]">
+      {inboxPrivacy.shieldOnLeave && inBackground && <div aria-hidden className="fixed inset-0 z-[200] bg-[rgb(var(--bg-app))]" />}
+      {!online && (
+        <div role="status" className="pointer-events-none fixed left-1/2 top-[calc(var(--sat)+0.25rem)] z-[90] -translate-x-1/2 rounded-full bg-[rgb(var(--text-primary))] px-3 py-1 text-xs font-semibold text-[rgb(var(--bg-panel))] shadow-lg">
+          Offline · messages can’t send or arrive until you reconnect
+        </div>
+      )}
       {inFocus && (
-        <div className="pointer-events-none fixed left-1/2 top-3 z-40 -translate-x-1/2 rounded-full bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs font-semibold shadow-lg ring-1 ring-[rgb(var(--accent))]">
+        <div className="pointer-events-none fixed left-1/2 top-[calc(var(--sat)+0.75rem)] z-40 -translate-x-1/2 rounded-full bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs font-semibold shadow-lg ring-1 ring-[rgb(var(--accent))]">
           Focus mode on{bundled ? ` · ${bundled} notification${bundled > 1 ? 's' : ''} bundled` : ''}
         </div>
       )}
       {evApi.alarms.length > 0 && (
-        <div className="fixed right-3 top-3 z-[60] flex w-[min(92vw,22rem)] flex-col gap-2" role="alert" aria-live="assertive">
+        <div className="fixed right-3 top-[calc(var(--sat)+0.75rem)] z-[60] flex w-[min(92vw,22rem)] flex-col gap-2" role="alert" aria-live="assertive">
           {evApi.alarms.map((a) => (
             <div key={a.id} className="flex items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel))] p-3.5 shadow-2xl ring-2 ring-[rgb(var(--accent))]">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"><BellRing size={16} /></span>
@@ -428,6 +507,8 @@ function App() {
             query={query}
             onQuery={setQuery}
             onSelect={openChat}
+            inboxPrivacy={inboxPrivacy}
+            onRefresh={refreshAll}
             dark={dark}
             onToggleDark={toggleDark}
             onOpenSettings={() => setSettingsOpen(true)}
@@ -477,6 +558,10 @@ function App() {
             onNewGroup={() => {
               setNewChatOpen(false)
               setCreateGroupOpen(true)
+            }}
+            onGhost={() => {
+              setNewChatOpen(false)
+              setGhostLauncher({ initialId: null })
             }}
           />
         )}
@@ -542,9 +627,23 @@ function App() {
           error={gcall.error}
           onAccept={() => void gcall.acceptInvite()}
           onDecline={gcall.decline}
-          onLeave={gcall.leave}
+          onLeave={() => { setGcallMin(false); gcall.leave() }}
+          minimized={gcallMin}
+          onMinimize={() => setGcallMin(true)}
+          onRestore={() => setGcallMin(false)}
           onToggleMute={gcall.toggleMute}
           onToggleCam={gcall.toggleCam}
+        />
+        {ghostLauncher && <GhostLauncher people={ghostPeople} initialId={ghostLauncher.initialId} onClose={() => setGhostLauncher(null)} onInvite={inviteToGhost} />}
+        <GhostInviteOverlay
+          incoming={ghost.incoming}
+          outgoing={ghost.outgoing}
+          notify={ghost.session?.notify ?? null}
+          name={ghostPeerChat?.name ?? ghostPeerContact?.name ?? 'Someone'}
+          avatar={ghostPeerChat?.avatar ?? ghostPeerContact?.avatar ?? user!.avatar}
+          onAccept={() => void ghost.accept()}
+          onDecline={() => void ghost.decline()}
+          onCancel={() => void ghost.cancel()}
         />
         <CallOverlay
           state={call.state}
@@ -563,6 +662,15 @@ function App() {
           onToggleMute={call.toggleMute}
           onToggleCam={call.toggleCam}
           onDismissError={call.dismissError}
+          onFlipCamera={call.flipCamera}
+          connectedAt={call.connectedAt}
+          minimized={callMin}
+          onMinimize={() => setCallMin(true)}
+          onRestore={() => setCallMin(false)}
+          onOpenChat={() => {
+            if (call.peerId) openChat(REAL_PREFIX + call.peerId)
+            setCallMin(true)
+          }}
         />
 
         <div className={`${activeChat ? 'flex' : 'hidden md:flex'} h-full min-w-0 flex-1`}>
@@ -575,6 +683,9 @@ function App() {
               onBack={closeChat}
               onSend={sendMessage}
               onUpgrade={() => setUpgradeOpen(true)}
+              ghostSession={activeChat.id.startsWith(REAL_PREFIX) && ghost.active && ghost.peerId === peerOf(activeChat.id) && ghost.session ? { id: ghost.session.id } : null}
+              onGhostStart={activeChat.id.startsWith(REAL_PREFIX) ? () => setGhostLauncher({ initialId: activeChat.id }) : undefined}
+              onGhostEnd={activeChat.id.startsWith(REAL_PREFIX) ? () => void ghost.end() : undefined}
               onCall={activeChat.id.startsWith(REAL_PREFIX) ? placeCall : activeChat.id.startsWith(GROUP_PREFIX) ? placeGroupCall : undefined}
               onOpenGroup={activeGroup ? () => setGroupSettingsId(activeGroup.id) : undefined}
               polls={

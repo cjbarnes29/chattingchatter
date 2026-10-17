@@ -41,6 +41,26 @@
   --accent-foreground: 24 12 8;
 }
 
+/* Safe-area insets (camera cutout, status bar, gesture bar). Capacitor's SystemBars
+   injects --safe-area-inset-*; env() covers browsers/PWAs. */
+:root {
+  --sat: max(env(safe-area-inset-top, 0px), var(--safe-area-inset-top, 0px));
+  --sab: max(env(safe-area-inset-bottom, 0px), var(--safe-area-inset-bottom, 0px));
+  --sal: max(env(safe-area-inset-left, 0px), var(--safe-area-inset-left, 0px));
+  --sar: max(env(safe-area-inset-right, 0px), var(--safe-area-inset-right, 0px));
+}
+
+html, body, #root { min-height: 100%; }
+
+/* Full-screen roots on phones sit inside the safe area; desktop keeps its own padding. */
+.safe-shell { height: 100vh; height: 100dvh; padding: var(--sat) var(--sar) var(--sab) var(--sal); }
+@media (min-width: 768px) { .safe-shell { padding: 1rem; } }
+
+/* For full-screen overlays and pages on phones (desktop keeps its own padding) */
+@media (max-width: 767px) {
+  .safe-overlay { padding-top: var(--sat); padding-bottom: var(--sab); padding-left: var(--sal); padding-right: var(--sar); }
+}
+
 body {
   font-family: var(--font-body, 'Bricolage Grotesque'), system-ui, sans-serif;
   background: rgb(var(--bg-app));

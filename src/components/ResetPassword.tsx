@@ -121,7 +121,7 @@ export default function ResetPassword({ onBack }: { onBack?: () => void }) {
   }[step]
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center bg-[rgb(var(--bg-app))] p-4">
+    <div className="flex min-h-screen safe-page w-full items-center justify-center bg-[rgb(var(--bg-app))] p-4">
       <div className="w-full max-w-md rounded-3xl bg-[rgb(var(--bg-panel))] p-8 shadow-2xl ring-1 ring-[rgb(var(--border))]">
         <button type="button" onClick={goBack} className="mb-4 flex items-center gap-1 text-sm font-semibold text-[rgb(var(--text-secondary))] hover:text-[rgb(var(--text-primary))]">
           <ArrowLeft size={16} /> {step === 'email' ? 'Back to sign in' : 'Back'}

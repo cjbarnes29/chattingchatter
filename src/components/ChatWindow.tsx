@@ -4,6 +4,7 @@ import { isChatOpened, markChatOpened, onOpenedChange } from '../appLock'
 import { ArrowLeft, Phone, Video, Search, MoreVertical, Smile, Paperclip, Send, Check, CheckCheck, Lock, Unlock, Tag } from 'lucide-react'
 import type { Chat, Message } from '../data'
 import GhostCanvas from './GhostCanvas'
+import { activeMention, insertMention, splitMentions } from '../mentions'
 import { Ghost as GhostIcon } from 'lucide-react'
 import CalendarPanel from './CalendarPanel'
 import type { CalEvent } from '../calendar'
@@ -112,6 +113,12 @@ type Props = {
     onVote: (pollId: string, options: number[]) => void
     onClose: (pollId: string) => void
   }
+  /** real chats: the accepted Ghost Canvas session with this person, if there is one */
+  ghostSession?: { id: string } | null
+  /** real chats: open the "who to invite" sheet; the canvas itself only opens once they accept */
+  onGhostStart?: () => void
+  /** real chats: end the shared session for both people */
+  onGhostEnd?: () => void
   calendar?: {
     myId: string
     events: CalEvent[]
@@ -127,10 +134,9 @@ function StatusIcon({ status }: { status?: Message['status'] }) {
   return <CheckCheck size={14} className="text-sky-400" />
 }
 
-const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
-export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, decoy = false, polls, calendar }: Props) {
+export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, decoy = false, polls, calendar, ghostSession, onGhostStart, onGhostEnd }: Props) {
   const cstyle = useChatStyle()
   const pro = usePro()
   const opened = useSyncExternalStore(onOpenedChange, () => isChatOpened(rawChat.id))
@@ -165,6 +171,14 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
   const [calOpen, setCalOpen] = useState(false)
   const [pollOpen, setPollOpen] = useState(false)
   const [draft, setDraft] = useState('')
+  const [emojiOpen, setEmojiOpen] = useState(false)
+  // @mentions: only in groups, where `polls.members` lists the people in the chat
+  const members = polls?.members ?? []
+  const mentionNames = members.map((m) => m.name)
+  const mentionQuery = members.length ? activeMention(draft) : null
+  const mentionHits = mentionQuery === null ? [] : members.filter((m) => m.id !== polls?.myId && m.name.toLowerCase().includes(mentionQuery.toLowerCase())).slice(0, 5)
+  const renderText = (text: string) =>
+    members.length ? splitMentions(text, mentionNames).map((p, i) => (p.mention ? <strong key={i} className="rounded bg-[rgb(var(--accent-soft))] px-0.5 text-[rgb(var(--accent))]">{p.text}</strong> : <span key={i}>{p.text}</span>)) : text
   const [menuOpen, setMenuOpen] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
   const [showLock, setShowLock] = useState<Message | null>(null)
@@ -174,8 +188,9 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
   const [ghost, setGhost] = useState(false)
   const [holding, setHolding] = useState(false)
   const [wiped, setWiped] = useState(false)
-  const holdTimer = useRef<ReturnType<typeof setTimeout>>()
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const exitGhost = useCallback(() => {
+    onGhostEnd?.()
     setGhost((g) => {
       if (g) {
         setWiped(true)
@@ -183,13 +198,24 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
       }
       return false
     })
-  }, [])
+  }, [onGhostEnd])
+  // Real chats need an accepted invitation: the canvas opens when the session starts and closes when it ends.
+  const liveGhostId = ghostSession?.id
+  useEffect(() => {
+    if (!onGhostStart) return
+    setGhost(!!liveGhostId)
+  }, [liveGhostId, onGhostStart])
+  const openGhost = () => {
+    if (!onGhostStart) return setGhost(true) // sample chats keep the solo demo canvas
+    if (liveGhostId) setGhost(true)
+    else onGhostStart()
+  }
   const startHold = (e: React.PointerEvent) => {
     if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.bg) return
     setHolding(true)
     holdTimer.current = setTimeout(() => {
       setHolding(false)
-      setGhost(true)
+      openGhost()
     }, 800)
   }
   const cancelHold = () => {
@@ -260,7 +286,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
             </>
           )}
           {!chat.isGroup && (
-            <button onClick={() => setGhost(true)} aria-label="Open Ghost Canvas" title="Ghost Canvas" className="rounded-full p-2 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent-soft))]"><GhostIcon size={19} /></button>
+            <button onClick={openGhost} aria-label="Open Ghost Canvas" title="Ghost Canvas" className="rounded-full p-2 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent-soft))]"><GhostIcon size={19} /></button>
           )}
           {calendar && (
             <button onClick={() => setCalOpen(true)} aria-label="Open calendar" title="Calendar & event alarms" className="relative rounded-full p-2 hover:bg-[rgb(var(--accent-soft))]">
@@ -434,7 +460,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
             const hidden = m.private && !unlocked
             const tags = tagsOf(m)
             const reaction = edits.msgs[m.id]?.reaction
-            const quoteMatch = !hidden && !story0(m.text) ? /^↪ ([^\n]*)\n([\s\S]*)$/.exec(m.text) : null
+            const quoteMatch = !hidden ? /^↪ ([^\n]*)\n([\s\S]*)$/.exec(m.text) : null
             const viewed = !m.fromMe && i === visibleMessages.length - 1
             const story = !hidden && isEmojiStory(m.text)
             return (
@@ -482,10 +508,10 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
                     ) : quoteMatch ? (
                       <>
                         <p className="mb-1 truncate rounded-lg border-l-2 border-[rgb(var(--accent))] bg-black/5 px-2 py-1 text-xs text-[rgb(var(--text-secondary))] dark:bg-white/5">{quoteMatch[1]}</p>
-                        <p className="whitespace-pre-wrap break-words">{quoteMatch[2]}</p>
+                        <p className="whitespace-pre-wrap break-words">{renderText(quoteMatch[2])}</p>
                       </>
                     ) : (
-                      <p className="whitespace-pre-wrap break-words">{m.text}</p>
+                      <p className="whitespace-pre-wrap break-words">{renderText(m.text)}</p>
                     )}
                     <div className="float-right ml-3 mt-1 flex translate-y-0.5 items-center gap-1 text-[11px] text-[rgb(var(--text-secondary))]">
                       {viewed && <ViewingEye active />}
@@ -540,18 +566,38 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
           e.preventDefault()
           submit()
         }}
-        className="flex items-end gap-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-3 py-3 md:px-5"
+        className="relative flex items-end gap-2 border-t border-[rgb(var(--border))] bg-[rgb(var(--bg-panel))] px-3 py-3 md:px-5"
       >
-        <button type="button" aria-label="Emoji" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
-          <Smile size={22} />
-        </button>
-        <button type="button" aria-label="Attach" disabled={decoy} title={decoy ? 'Attachments are not available here' : undefined} className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))] disabled:cursor-not-allowed disabled:opacity-40 disabled:hover:bg-transparent">
+        <div className="relative">
+          <button type="button" aria-label="Emoji" aria-expanded={emojiOpen} onClick={() => setEmojiOpen((v) => !v)} className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
+            <Smile size={22} />
+          </button>
+          {emojiOpen && (
+            <div role="group" aria-label="Emoji" className="absolute bottom-12 left-0 z-20 grid w-56 grid-cols-6 gap-1 rounded-2xl bg-[rgb(var(--bg-panel))] p-2 shadow-xl ring-1 ring-[rgb(var(--border))]">
+              {['😀', '😂', '😍', '🥰', '😎', '🤔', '😢', '😡', '👍', '👎', '🙏', '👏', '🔥', '❤️', '🎉', '✨', '🌅', '☕', '📖', '🌈', '🍕', '🎶', '💯', '👀'].map((e) => (
+                <button key={e} type="button" aria-label={`Insert ${e}`} onClick={() => { setDraft((d) => d + e); setEmojiOpen(false) }} className="rounded-lg p-1 text-xl hover:bg-[rgb(var(--accent-soft))]">{e}</button>
+              ))}
+            </div>
+          )}
+        </div>
+        <button type="button" aria-label="Attach" disabled title={decoy ? 'Attachments are not available here' : 'Attachments are coming soon'} className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] disabled:cursor-not-allowed disabled:opacity-40">
           <Paperclip size={22} />
         </button>
         {polls && (
           <button type="button" onClick={() => setPollOpen(true)} aria-label="Create poll" title="Create poll" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
             <BarChart3 size={22} />
           </button>
+        )}
+        {mentionHits.length > 0 && (
+          <ul role="listbox" aria-label="Mention someone" className="absolute inset-x-3 bottom-[4.25rem] z-20 overflow-hidden rounded-2xl bg-[rgb(var(--bg-panel))] shadow-xl ring-1 ring-[rgb(var(--border))] md:inset-x-5">
+            {mentionHits.map((m) => (
+              <li key={m.id} role="option" aria-selected={false}>
+                <button type="button" onMouseDown={(e) => e.preventDefault()} onClick={() => setDraft((d) => insertMention(d, m.name))} className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm hover:bg-[rgb(var(--accent-soft))]">
+                  <img src={m.avatar} alt="" className="h-6 w-6 rounded-full object-cover" /> {m.name}
+                </button>
+              </li>
+            ))}
+          </ul>
         )}
         <textarea
           rows={1}
@@ -593,7 +639,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
       {personOpen && <PersonEditor chatId={rawChat.id} name={chat.name} avatar={chat.avatar} edited={!!personEdit} onClose={() => setPersonOpen(false)} />}
       {pollOpen && polls && <CreatePollModal onClose={() => setPollOpen(false)} onCreate={polls.onCreate} />}
       {calOpen && calendar && <CalendarPanel friend={chat.name.split(' ')[0]} {...calendar} onClose={() => setCalOpen(false)} />}
-      {ghost && <GhostCanvas friend={chat.name.split(' ')[0]} chatId={chat.id} onSend={onSend} onExit={exitGhost} onUpgrade={onUpgrade} calendar={calendar} />}
+      {ghost && (!onGhostStart || liveGhostId) && <GhostCanvas friend={chat.name.split(' ')[0]} chatId={chat.id} sessionId={liveGhostId} onSend={onSend} onExit={exitGhost} onUpgrade={onUpgrade} calendar={calendar} />}
     </section>
   )
 }

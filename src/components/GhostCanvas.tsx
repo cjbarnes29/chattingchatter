@@ -9,7 +9,7 @@ import { REAL_PREFIX } from '../realChats'
 import { readGhostPrefs } from '../prefs'
 import CalendarPanel from './CalendarPanel'
 import GhostWaiting from './GhostWaiting'
-import { CONNECT_TIMEOUT, INVITE_COOLDOWN, INVITE_TEXT, PEER_LEFT_DELAY, elapsedSecs, graceRuns, initialSession, inviteWait, reduce, viewOf, wipeOnLeave } from '../ghostSession'
+import { CONNECT_TIMEOUT, INVITE_COOLDOWN, INVITE_TEXT, PEER_LEFT_DELAY, elapsedSecs, initialSession, inviteWait, reduce, viewOf, wipeOnLeave } from '../ghostSession'
 import { drawStroke, strokeHits, type Brush as BrushId, type Stroke } from '../canvasDraw'
 import type { CalEvent } from '../calendar'
 
@@ -55,7 +55,7 @@ type CalendarApi = {
   onDelete: (id: string) => void
 }
 
-export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanvas, onUpgrade, calendar }: { friend: string; chatId: string; onSend?: (chatId: string, text: string) => void; onExit: () => void; onUpgrade: () => void; calendar?: CalendarApi }) {
+export default function GhostCanvas({ friend, chatId, sessionId, onSend, onExit: closeCanvas, onUpgrade, calendar }: { friend: string; chatId: string; sessionId?: string; onSend?: (chatId: string, text: string) => void; onExit: () => void; onUpgrade: () => void; calendar?: CalendarApi }) {
   // Every way out goes through here, so a canvas closes exactly once even when "app lost focus" and "tab hidden" arrive together
   const closed = useRef(false)
   const onExit = useCallback(() => {
@@ -64,11 +64,16 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
     closeCanvas()
   }, [closeCanvas])
   const pro = usePro()
+  const proRef = useRef(pro.isPro)
+  proRef.current = pro.isPro
+  const friendRef = useRef(friend)
+  friendRef.current = friend
   const { user } = useAuth()
   const G = useMemo(() => readGhostPrefs(), [])
   const myId = user?.id ?? 'me'
   const peerId = chatId.startsWith(REAL_PREFIX) ? chatId.slice(REAL_PREFIX.length) : null
-  const room = peerId ? [myId, peerId].sort().join('_') : null
+  // a live room only exists for an accepted Ghost Canvas session; chats without one get the solo demo canvas
+  const room = peerId && sessionId ? sessionId : null
   const [lifeSec, setLifeSec] = useState(G.lifetime)
   const LIFE = lifeSec * 1000
   const [myColor, setMyColor] = useState(G.ink)
@@ -118,14 +123,19 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
   const [game, setGame] = useState<Game>('tictactoe')
   const [view, setView] = useState({ x: 0, y: 0, z: 1 })
   const [pinned, setPinned] = useState(false)
-  const [held, setHeld] = useState(false)
-  const [grace, setGrace] = useState(G.grace)
+  const pinnedRef = useRef(false)
+  pinnedRef.current = pinned
+  // what the other person's plan allows, learned from the room (null = not known yet)
+  const [peerPro, setPeerPro] = useState<boolean | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
+  // saving a shared canvas needs both people's OK
+  const [saveState, setSaveState] = useState<'idle' | 'asking' | 'allowed' | 'denied'>('idle')
+  const [saveAsk, setSaveAsk] = useState(false)
   const [showCal, setShowCal] = useState(false)
   const [savePrompt, setSavePrompt] = useState(false)
   const [pw, setPw] = useState('')
   const [pw2, setPw2] = useState('')
   const [saveMsg, setSaveMsg] = useState<string | null>(null)
-  const wasHeld = useRef(false)
   const layer = useRef<HTMLDivElement>(null)
   const canvas = useRef<HTMLCanvasElement>(null)
   const strokes = useRef<Stroke[]>([])
@@ -156,7 +166,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
 
   useEffect(() => {
     // "Close when I leave" protects what's on the canvas; an empty canvas you're waiting on can be left and returned to
-    const leave = () => { if (wipeOnLeave(G.exitOnLeave, sessionRef.current, strokes.current.length > 0 || contentRef.current)) onExit() }
+    const leave = () => { if (pinnedRef.current) return; if (wipeOnLeave(G.exitOnLeave, sessionRef.current, strokes.current.length > 0 || contentRef.current)) onExit() }
     const out = leave
     const vis = () => { if (document.hidden) leave() }
     const key = (e: KeyboardEvent) => e.key === 'Escape' && onExit()
@@ -169,22 +179,6 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
       window.removeEventListener('keydown', key)
     }
   }, [onExit, G])
-
-  // The hold-to-stay countdown only runs when the other person is here (or on the solo demo canvas).
-  // Waiting alone never counts down, and when they (re)join the countdown starts fresh so a stale one can't close the canvas.
-  const graceOn = graceRuns(!!room, session)
-  useEffect(() => {
-    if (peerOnline) {
-      wasHeld.current = false
-      setGrace(G.grace)
-    }
-  }, [peerOnline, G.grace])
-  useEffect(() => {
-    if (phase !== 'live' || held || pinned || wasHeld.current || !graceOn) return
-    if (grace <= 0) { onExit(); return }
-    const t = setTimeout(() => setGrace((g) => g - 1), 1000)
-    return () => clearTimeout(t)
-  }, [phase, held, pinned, grace, onExit, graceOn])
 
   // tick once a second while waiting so the elapsed time and invite cooldown stay current
   useEffect(() => {
@@ -261,15 +255,17 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
   // live room: strokes, notes, collage, games and cursors travel over a realtime channel
   useEffect(() => {
     if (!room) return
-    const ch = supabase.channel(`ghost:${room}`, { config: { presence: { key: myId } } })
+    const ch = supabase.channel(`ghost:${room}`, { config: { private: true, presence: { key: myId } } })
     chan.current = ch
     let dead = false
     const timers: ReturnType<typeof setTimeout>[] = []
     peersSeen.current = new Set()
     const sync = () => {
       if (dead) return
-      const others = Object.keys(ch.presenceState()).filter((k) => k !== myId)
+      const state = ch.presenceState() as Record<string, { pro?: boolean }[]>
+      const others = Object.keys(state).filter((k) => k !== myId)
       if (others.length > 0) {
+        setPeerPro(!!state[others[0]]?.[0]?.pro)
         clearTimeout(peerGoneTimer.current)
         dispatch({ type: 'peerJoined' })
       } else if (sessionRef.current.peer === 'present') {
@@ -286,7 +282,9 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
     }
     ch.on('presence', { event: 'sync' }, sync)
     ch.on('broadcast', { event: 'stroke' }, ({ payload: p }) => {
-      strokes.current.push({ id: p.id, pts: [p.pt], color: p.color, brush: p.brush, w: p.w, life: p.life, t: Date.now(), opacity: typeof p.opacity === 'number' ? Math.min(1, Math.max(0.1, p.opacity)) : 1 })
+      // Pro brushes and opacity are Pro features: a Free viewer sees the same stroke drawn with the classic brush
+      const proStroke = proRef.current
+      strokes.current.push({ id: p.id, pts: [p.pt], color: p.color, brush: proStroke ? p.brush : 'classic', w: p.w, life: p.life, t: Date.now(), opacity: proStroke && typeof p.opacity === 'number' ? Math.min(1, Math.max(0.1, p.opacity)) : 1 })
     })
     ch.on('broadcast', { event: 'pts' }, ({ payload: p }) => {
       const s = strokes.current.find((k) => k.id === p.id)
@@ -301,8 +299,21 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
     ch.on('broadcast', { event: 'note' }, ({ payload: p }) => dropNoteRef.current(p.x, p.y, p.text, false, p.life))
     ch.on('broadcast', { event: 'sticker' }, ({ payload: p }) => setStickers((all) => (all.some((s) => s.id === p.id) ? all.map((s) => (s.id === p.id ? { ...s, x: p.x, y: p.y } : s)) : [...all, p])))
     ch.on('broadcast', { event: 'ttt' }, ({ payload: p }) => { setBoard(p.cells); setTurn(p.turn) })
-    ch.on('broadcast', { event: 'c4' }, ({ payload: p }) => { setC4(p.cells); setTurn4(p.turn) })
-    ch.on('broadcast', { event: 'game' }, ({ payload: p }) => setGame(p.game))
+    ch.on('broadcast', { event: 'c4' }, ({ payload: p }) => {
+      if (!proRef.current) return setHint(`${friendRef.current} started Connect Four, which needs Chatter Pro.`)
+      setC4(p.cells); setTurn4(p.turn)
+    })
+    ch.on('broadcast', { event: 'game' }, ({ payload: p }) => {
+      if (p.game === 'connect4' && !proRef.current) return setHint(`${friendRef.current} started Connect Four, which needs Chatter Pro.`)
+      setGame(p.game)
+    })
+    // saving a shared canvas: the other person has to say yes first
+    ch.on('broadcast', { event: 'savereq' }, () => setSaveAsk(true))
+    ch.on('broadcast', { event: 'saveans' }, ({ payload: p }) => {
+      setSaveState(p.ok ? 'allowed' : 'denied')
+      if (p.ok) setSavePrompt(true)
+      else setSaveMsg(`${friendRef.current} didn’t allow saving this canvas.`)
+    })
     // If the live channel never comes up, say so (recoverable: Retry or Exit). This never closes the canvas.
     const watchdog = setTimeout(() => { if (!dead) dispatch({ type: 'linkDown' }) }, CONNECT_TIMEOUT * 1000)
     ch.subscribe((status) => {
@@ -310,7 +321,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
       if (status === 'SUBSCRIBED') {
         clearTimeout(watchdog)
         dispatch({ type: 'linkUp' })
-        ch.track({ at: Date.now() })
+        ch.track({ at: Date.now(), pro: pro.isPro })
       } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
         clearTimeout(watchdog)
         dispatch({ type: 'linkDown' })
@@ -485,14 +496,6 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
     dispatch({ type: 'retry' })
     setAttempt((a) => a + 1) // re-runs the channel effect, which closes the old channel first
   }
-  const releaseHold = () => {
-    setHeld(false)
-    if (pinned) return
-    // alone in a live room there is nobody to protect the canvas from, so letting go isn't "leaving"
-    if (room && session.peer !== 'present') { wasHeld.current = false; return }
-    onExit()
-  }
-
   const sendChat = (e: React.FormEvent) => {
     e.preventDefault()
     const t = chatDraft.trim()
@@ -588,11 +591,31 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
     if (pw !== pw2) return setSaveMsg('The two passwords do not match.')
     const payload = JSON.stringify({ strokes: strokes.current.filter((s) => Date.now() - s.t < s.life).map((s) => ({ pts: s.pts, color: s.color, brush: s.brush, w: s.w, opacity: s.opacity })), stickers, notes: notes.map(({ x, y, text, mine }) => ({ x, y, text, mine })), view })
     await pro.saveMasterpiece(`Canvas · ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`, payload, pw)
-    setPw(''); setPw2(''); setSavePrompt(false); setSaveMsg('Saved encrypted on this device. Open it in Settings → Chatter Pro.')
+    setPw(''); setPw2(''); setSavePrompt(false); setSaveState('idle'); setSaveMsg('Saved encrypted on this device. Open it in Settings → Chatter Pro.')
     window.setTimeout(() => setSaveMsg(null), 3200)
   }
 
   const requirePro = (fn: () => void) => () => (pro.isPro ? fn() : onUpgrade())
+
+  // Saving keeps a copy of what BOTH of you drew, so on a shared canvas the other person must allow it first
+  const startSave = () => {
+    if (!room) return setSavePrompt((v) => !v)
+    if (saveState === 'allowed') return setSavePrompt((v) => !v)
+    if (!peerOnline) return setSaveMsg(`Saving needs ${friend} to be here to say yes.`)
+    setSaveState('asking')
+    setSaveMsg(`Asking ${friend} if you can save this canvas…`)
+    emit('savereq', {})
+  }
+  const answerSave = (ok: boolean) => {
+    setSaveAsk(false)
+    emit('saveans', { ok })
+  }
+
+  useEffect(() => {
+    if (!hint) return
+    const t = setTimeout(() => setHint(null), 4000)
+    return () => clearTimeout(t)
+  }, [hint])
 
   const tools: { id: Mode; icon: typeof Brush; label: string; pro?: boolean }[] = [
     { id: 'ink', icon: Brush, label: 'Ink' },
@@ -603,7 +626,6 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
   ]
 
   const showC4 = game === 'connect4'
-  const cols = 3, rows = 3
 
   return (
     <div className="ghost-root absolute inset-0 z-30 flex flex-col overflow-hidden bg-[#0B1210] text-white select-none touch-none">
@@ -625,12 +647,12 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
           </p>
         </div>
         {phase === 'live' && (
-          <button onClick={requirePro(() => setSavePrompt((s) => !s))} className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium text-white/70 ring-1 ring-white/20 hover:bg-white/10">
+          <button onClick={requirePro(startSave)} className="flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium text-white/70 ring-1 ring-white/20 hover:bg-white/10">
             {pro.isPro ? <Save size={12} /> : <Crown size={12} className="text-[#7CF5C0]" />} Save
           </button>
         )}
         <button onClick={() => setPinned((p) => !p)} aria-pressed={pinned} className={`flex items-center gap-1 rounded-full px-3 py-1.5 text-xs font-medium ring-1 transition ${pinned ? 'bg-[#7CF5C0] text-black ring-[#7CF5C0]' : 'text-white/70 ring-white/20 hover:bg-white/10'}`}>
-          <Pin size={12} /> {pinned ? 'Pinned' : 'Pin'}
+          <Pin size={12} /> {pinned ? 'Staying open' : 'Stay open'}
         </button>
         <button onClick={onExit} aria-label="Wipe and exit" className="rounded-full p-2 text-white/70 hover:bg-white/10"><X size={18} /></button>
       </div>
@@ -644,6 +666,14 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
         </div>
       )}
       {saveMsg && <p className="relative z-10 px-4 pb-1 text-center text-xs text-[#7CF5C0]">{saveMsg}</p>}
+      {hint && <p role="status" className="relative z-10 px-4 pb-1 text-center text-xs text-[#FFB86B]">{hint}</p>}
+      {saveAsk && (
+        <div role="alertdialog" aria-label="Allow saving" className="relative z-20 mx-4 mb-2 flex flex-wrap items-center gap-2 rounded-2xl bg-[#101a16] p-3 text-sm ring-1 ring-[#7CF5C0]/40">
+          <p className="min-w-0 flex-1">{friend} wants to save a private copy of this canvas on their device. Allow it?</p>
+          <button onClick={() => answerSave(false)} className="rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-white/30">Don’t allow</button>
+          <button onClick={() => answerSave(true)} className="rounded-full bg-[#7CF5C0] px-3 py-1.5 text-xs font-bold text-black">Allow</button>
+        </div>
+      )}
 
       {phase === 'waiting' ? (
         <div className="relative z-10 flex flex-1 flex-col items-center justify-center gap-6">
@@ -704,7 +734,7 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
               <div className="absolute left-1/2 top-1/2 z-10 -translate-x-1/2 -translate-y-1/2 rounded-2xl bg-white/5 p-3 ring-1 ring-white/15" onPointerDown={(e) => e.stopPropagation()}>
                 <div className="mb-2 flex gap-1 text-[11px]">
                   <button onClick={() => { setGame('tictactoe'); emit('game', { game: 'tictactoe' }) }} className={`rounded-full px-2.5 py-1 ${!showC4 ? 'bg-[#7CF5C0] text-black' : 'text-white/70'}`}>Tic-tac-toe</button>
-                  <button onClick={requirePro(() => { setGame('connect4'); emit('game', { game: 'connect4' }) })} className={`flex items-center gap-1 rounded-full px-2.5 py-1 ${showC4 ? 'bg-[#7CF5C0] text-black' : 'text-white/70'}`}>{!pro.isPro && <Crown size={10} />}Connect Four</button>
+                  <button onClick={requirePro(() => { if (room && peerPro === false) return setHint(`Connect Four needs Chatter Pro on both sides, and ${friend} is on Free.`); setGame('connect4'); emit('game', { game: 'connect4' }) })} className={`flex items-center gap-1 rounded-full px-2.5 py-1 ${showC4 ? 'bg-[#7CF5C0] text-black' : 'text-white/70'}`}>{!pro.isPro && <Crown size={10} />}Connect Four</button>
                 </div>
                 {!showC4 ? (
                   <>
@@ -836,14 +866,9 @@ export default function GhostCanvas({ friend, chatId, onSend, onExit: closeCanva
                 </button>
               ))}
             </div>
-            <button
-              onPointerDown={(e) => { e.currentTarget.setPointerCapture(e.pointerId); wasHeld.current = true; setHeld(true) }}
-              onPointerUp={releaseHold}
-              onPointerCancel={releaseHold}
-              className={`flex h-14 items-center gap-2 rounded-full px-5 text-xs font-semibold ring-1 transition ${held || pinned ? 'bg-[#7CF5C0]/20 text-[#7CF5C0] ring-[#7CF5C0]' : 'text-white ring-white/30'}`}
-            >
-              <Fingerprint size={22} />
-              <span>{held || pinned ? 'Canvas alive' : !graceOn || wasHeld.current ? 'Hold to stay' : `Hold to stay · ${grace}s`}</span>
+            <button onClick={onExit} aria-label="End Ghost Canvas" className="flex h-12 items-center gap-2 rounded-full px-5 text-xs font-semibold text-white ring-1 ring-white/30 transition hover:bg-white/10">
+              <X size={18} />
+              <span>End session</span>
             </button>
           </div>
         </>

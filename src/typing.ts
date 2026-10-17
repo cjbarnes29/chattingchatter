@@ -6,7 +6,7 @@ export function useTyping(myId: string, peerId: string | null) {
   const [typing, setTyping] = useState(false)
   const chRef = useRef<ReturnType<typeof supabase.channel> | null>(null)
   const last = useRef(0)
-  const timer = useRef<number>()
+  const timer = useRef<number | undefined>(undefined)
 
   useEffect(() => {
     setTyping(false)

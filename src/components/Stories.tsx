@@ -105,7 +105,7 @@ export function StoryViewer({
   const [text, setText] = useState(story.body)
   const total = Object.values(story.reactions).reduce((a, b) => a + b, 0)
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 safe-overlay flex items-center justify-center bg-black/80 p-4" onClick={onClose}>
       <div onClick={(e) => e.stopPropagation()} className="relative flex w-full max-w-sm flex-col rounded-3xl bg-gradient-to-br from-[#2B1D26] via-[#1C1926] to-[#7A2C1C] p-6 text-white shadow-2xl">
         <div className="mb-5 flex items-center gap-3">
           <img src={story.authorAvatar} alt="" className="h-10 w-10 rounded-full object-cover" />

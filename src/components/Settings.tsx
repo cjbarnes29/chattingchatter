@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
-import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard, Smartphone, Clock, BookOpen, Globe } from 'lucide-react'
+import { formatPublicId } from '../publicId'
+import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, Copy, Share2, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard, Smartphone, Clock, BookOpen, Globe } from 'lucide-react'
 import { useAuth } from '../auth'
 import { usePro } from '../pro'
 import ProSettings from './ProSettings'
@@ -7,6 +8,7 @@ import AccountSettings from './AccountSettings'
 import AppearanceSettings from './AppearanceSettings'
 import InterfaceSettings from './InterfaceSettings'
 import FeatureSettings from './FeatureSettings'
+import InboxPrivacySettings from './InboxPrivacySettings'
 import AppPermissions from './AppPermissions'
 import { isNative } from '../native'
 import { PinGate } from './PinGate'
@@ -29,7 +31,7 @@ type Props = {
   decoy?: boolean
 }
 
-type Page = 'profile' | 'account' | 'appearance' | 'interface' | 'privacy' | 'notifications' | 'gestures' | 'ghost' | 'decoy' | 'pro' | 'permissions' | 'time' | 'tutorial'
+type Page = 'profile' | 'account' | 'appearance' | 'interface' | 'privacy' | 'inbox' | 'notifications' | 'gestures' | 'ghost' | 'decoy' | 'pro' | 'permissions' | 'time' | 'tutorial'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -74,10 +76,23 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
   const decoyPrefs = useDecoyPrefs()
   // swipe up and hold at the bottom of the decoy settings: opens account recovery
   const recoveryGesture = useRef<{ y: number; timer?: number; armed: boolean } | null>(null)
+  const decoyGesture = useRef<{ x: number; y: number; fired: boolean } | null>(null)
   const [photoBusy, setPhotoBusy] = useState(false)
   const [photoMsg, setPhotoMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [name, setName] = useState(user?.name ?? '')
   const [about, setAbout] = useState(user?.about ?? '')
+  const [idCopied, setIdCopied] = useState(false)
+  const idText = user?.publicId ? `#${formatPublicId(user.publicId)}` : ''
+  const copyId = async () => {
+    try {
+      await navigator.clipboard.writeText(idText)
+      setIdCopied(true)
+      setTimeout(() => setIdCopied(false), 1500)
+    } catch { /* clipboard blocked */ }
+  }
+  const shareId = () => {
+    navigator.share?.({ text: `Add me on Chatter: ${idText}` }).catch(() => {})
+  }
   const [nickname, setNickname] = useState(user?.nickname ?? '')
   const [age, setAge] = useState(user?.age ? String(user.age) : '')
   const [status, setStatus] = useState(user?.status ?? '')
@@ -149,6 +164,29 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
     else requestDecoy()
   }
 
+  // Hidden gesture on the Log out button (real account only): swipe it to the left, or press and hold, then
+  // slide sideways, to open the decoy controls. A plain tap still logs out.
+  const startDecoyGesture = (e: React.PointerEvent) => {
+    if (decoy) return
+    decoyGesture.current = { x: e.clientX, y: e.clientY, fired: false }
+  }
+  const moveDecoyGesture = (e: React.PointerEvent) => {
+    const g = decoyGesture.current
+    if (!g || g.fired) return
+    if (g.x - e.clientX > 70 && Math.abs(e.clientY - g.y) < 40) {
+      g.fired = true
+      setPage('decoy')
+    }
+  }
+  const endDecoyGesture = () => {
+    // keep the "fired" flag until the click that follows the pointer-up has been ignored
+    window.setTimeout(() => { decoyGesture.current = null }, 0)
+  }
+  const onLogoutClick = () => {
+    if (decoyGesture.current?.fired) return
+    requestLogout()
+  }
+
   const startRecovery = (e: React.PointerEvent) => {
     recoveryGesture.current = { y: e.clientY, armed: false }
     try { (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId) } catch { /* pointer already gone */ }
@@ -173,26 +211,44 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
   const label = 'mb-1.5 block text-xs font-semibold uppercase tracking-wider text-[rgb(var(--text-tertiary))]'
   const divider = 'divide-y divide-[rgb(var(--border))]'
 
-  const MENU: { id: Page; icon: React.ReactNode; title: string; desc: string; hideInDecoy?: boolean; decoyOnly?: boolean }[] = [
+  const MENU: { id: Page; icon: React.ReactNode; title: string; desc: string; hideInDecoy?: boolean; decoyOnly?: boolean; hidden?: boolean }[] = [
     { id: 'profile', icon: <User size={16} />, title: 'Profile', desc: 'Photo, name, nickname, age and status', hideInDecoy: true },
     { id: 'account', icon: <KeyRound size={16} />, title: 'Account', desc: 'Password, email and security question', hideInDecoy: true },
     { id: 'interface', icon: <LayoutDashboard size={16} />, title: 'Interface', desc: 'Theme, layout, navigation, dashboard and presets' },
     { id: 'appearance', icon: dark ? <Moon size={16} /> : <Sun size={16} />, title: 'Appearance', desc: 'Text, colours, chat screen and animations' },
     { id: 'privacy', icon: <ShieldCheck size={16} />, title: 'Privacy & security', desc: 'Receipts, locks, PIN and decoy PIN', hideInDecoy: true },
+    { id: 'inbox', icon: <EyeOff size={16} />, title: 'Inbox privacy', desc: 'Hide previews, names and photos; block screenshots', hideInDecoy: true },
     { id: 'notifications', icon: <Bell size={16} />, title: 'Notifications & sounds', desc: 'Previews, quick replies, sounds, alarms' },
     ...(isNative() ? [{ id: 'permissions' as const, icon: <Smartphone size={16} />, title: 'App permissions', desc: 'Camera, microphone, notifications, fingerprint', hideInDecoy: true }] : []),
     { id: 'time', icon: <Clock size={16} />, title: 'Time', desc: 'Show only real time on messages', decoyOnly: true },
     { id: 'gestures', icon: <Hand size={16} />, title: 'Chats & gestures', desc: 'Swipes, taps and shortcuts' },
     { id: 'ghost', icon: <Palette size={16} />, title: 'Ghost Canvas', desc: 'Ink, fade-out time and grid' },
-    { id: 'decoy', icon: <EyeOff size={16} />, title: 'Decoy chats', desc: 'Edit what the decoy PIN shows', hideInDecoy: true },
+    { id: 'decoy', icon: <EyeOff size={16} />, title: 'Decoy mode', desc: 'Decoy PIN and the chats it shows', hideInDecoy: true, hidden: true },
     { id: 'pro', icon: <Crown size={16} />, title: 'Chatter Pro', desc: isPro ? 'Plan, focus mode and tools' : 'Unlock decoy profiles, canvas toolkit and more', hideInDecoy: true },
     { id: 'tutorial', icon: <BookOpen size={16} />, title: 'Tutorial', desc: 'A beginner’s tour of Chatter' },
   ]
-  const items = MENU.filter((m) => !(decoy && m.hideInDecoy) && !(!decoy && m.decoyOnly))
+  const items = MENU.filter((m) => !(decoy && m.hideInDecoy) && !(!decoy && m.decoyOnly) && !m.hidden)
+  // real-account pages are grouped under their own heading; the decoy profile never sees them
+  const realItems = decoy ? [] : items.filter((m) => m.hideInDecoy)
+  const generalItems = items.filter((m) => !realItems.includes(m))
   const current = MENU.find((m) => m.id === page)
+  const renderList = (list: typeof MENU) => (
+    <ul className={divider}>
+      {list.map((m) => (
+        <li key={m.id}>
+          <button onClick={() => (m.id === 'tutorial' ? setTutorialOpen(true) : setPage(m.id))} className="flex w-full items-center text-left transition hover:bg-[rgb(var(--bg-panel-soft))]">
+            <div className="flex-1">
+              <Row icon={m.icon} title={m.title} desc={m.desc} />
+            </div>
+            <ChevronRight size={18} className="mr-4 text-[rgb(var(--text-tertiary))]" />
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 md:items-center md:p-6" onClick={close}>
+    <div className="fixed inset-0 z-50 safe-overlay flex items-stretch justify-center bg-black/40 md:items-center md:p-6" onClick={close}>
       {/* these sit on top of the settings backdrop, so clicks inside them must not reach its "tap outside to close" */}
       <div onClick={(e) => e.stopPropagation()}>
         {confirmOut && (
@@ -240,20 +296,19 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
                   <p className="truncate text-sm text-[rgb(var(--text-secondary))]">{decoy ? 'Chatter' : user.email}</p>
                 </div>
               </section>
-              <ul className={divider}>
-                {items.map((m) => (
-                  <li key={m.id}>
-                    <button onClick={() => (m.id === 'tutorial' ? setTutorialOpen(true) : setPage(m.id))} className="flex w-full items-center text-left transition hover:bg-[rgb(var(--bg-panel-soft))]">
-                      <div className="flex-1">
-                        <Row icon={m.icon} title={m.title} desc={m.desc} />
-                      </div>
-                      <ChevronRight size={18} className="mr-4 text-[rgb(var(--text-tertiary))]" />
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              {realItems.length > 0 && <SubTitle>Real account settings</SubTitle>}
+              {renderList(realItems)}
+              {realItems.length > 0 && <SubTitle>App settings</SubTitle>}
+              {renderList(generalItems)}
               <div className="px-5 pt-6">
-                <button onClick={requestLogout} className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-500/40 py-3 text-sm font-semibold text-rose-500 transition hover:bg-rose-500/10">
+                <button
+                  onClick={onLogoutClick}
+                  onPointerDown={startDecoyGesture}
+                  onPointerMove={moveDecoyGesture}
+                  onPointerUp={endDecoyGesture}
+                  onPointerCancel={endDecoyGesture}
+                  style={{ touchAction: 'pan-y' }}
+                  className="flex w-full items-center justify-center gap-2 rounded-xl border border-rose-500/40 py-3 text-sm font-semibold text-rose-500 transition hover:bg-rose-500/10">
                   <LogOut size={16} /> Log out
                 </button>
                 {hasPins && <p className="mt-2 text-center text-[11px] text-[rgb(var(--text-secondary))]">Your PIN is needed to log out.</p>}
@@ -273,6 +328,19 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
                 </label>
                 <p className="text-sm text-[rgb(var(--text-secondary))]">{photoBusy ? 'Uploading photo…' : user.email}</p>
                 {photoMsg && <p role="status" className={`text-xs ${photoMsg.ok ? 'text-emerald-600' : 'text-rose-500'}`}>{photoMsg.text}</p>}
+                {user.publicId && (
+                  <div className="mt-1 w-full max-w-xs rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-3 text-center">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-[rgb(var(--text-tertiary))]">Your ID#</p>
+                    <p className="mt-0.5 select-all font-mono text-xl font-bold tracking-widest">#{formatPublicId(user.publicId)}</p>
+                    <p className="mt-1 text-xs text-[rgb(var(--text-secondary))]">Friends can add you with this instead of your email.</p>
+                    <div className="mt-2 flex justify-center gap-2">
+                      <button type="button" onClick={copyId} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--bg-panel))] px-3 py-1.5 text-xs font-semibold ring-1 ring-[rgb(var(--border))]"><Copy size={13} /> {idCopied ? 'Copied' : 'Copy'}</button>
+                      {typeof navigator !== 'undefined' && 'share' in navigator && (
+                        <button type="button" onClick={shareId} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--bg-panel))] px-3 py-1.5 text-xs font-semibold ring-1 ring-[rgb(var(--border))]"><Share2 size={13} /> Share</button>
+                      )}
+                    </div>
+                  </div>
+                )}
               </section>
               <section className="space-y-4 px-5">
                 <label className="block">
@@ -402,7 +470,17 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
               <FeatureSettings section="ghost" />
             </>
           )}
-          {page === 'decoy' && <FeatureSettings section="decoy" />}
+          {page === 'inbox' && !decoy && <InboxPrivacySettings />}
+          {page === 'decoy' && !decoy && (
+            <>
+              <p className="px-5 pt-4 text-xs text-[rgb(var(--text-secondary))]">
+                <EyeOff size={13} className="mr-1 inline" /> Decoy mode opens a harmless look-alike Chatter when you enter the decoy PIN. It never loads your real chats, contacts or calls.
+              </p>
+              <ProSettings only="decoy" onUpgrade={onUpgrade} />
+              <SubTitle>Decoy chats</SubTitle>
+              <FeatureSettings section="decoy" />
+            </>
+          )}
           {page === 'pro' && <ProSettings only="pro" onUpgrade={onUpgrade} />}
         </div>
         {decoy && !page && (

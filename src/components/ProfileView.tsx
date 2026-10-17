@@ -61,7 +61,7 @@ export function PhotoZoom({ src, name, onClose, onInfo }: { src: string; name: s
 
   const btn = 'flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-30'
   return (
-    <div role="dialog" aria-label={`${name}'s photo`} className="fixed inset-0 z-[80] flex flex-col items-center justify-center gap-4 bg-black/90 p-5" onClick={onClose}>
+    <div role="dialog" aria-label={`${name}'s photo`} className="fixed inset-0 z-[80] safe-overlay flex flex-col items-center justify-center gap-4 bg-black/90 p-5" onClick={onClose}>
       <button onClick={onClose} aria-label="Close photo" className="absolute right-4 top-4 z-10 rounded-full bg-white/10 p-2.5 text-white hover:bg-white/20"><X size={20} /></button>
       <div
         className="flex max-h-[72vh] w-full max-w-full items-center justify-center overflow-hidden"

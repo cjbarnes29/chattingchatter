@@ -23,9 +23,9 @@ function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) =
   )
 }
 
-const OnlyCtx = createContext<'pin' | 'pro' | undefined>(undefined)
+const OnlyCtx = createContext<'pin' | 'pro' | 'decoy' | undefined>(undefined)
 
-function Section({ title, id, children }: { title: string; id?: 'pin' | 'pro'; children: React.ReactNode }) {
+function Section({ title, id, children }: { title: string; id?: 'pin' | 'pro' | 'decoy'; children: React.ReactNode }) {
   const only = useContext(OnlyCtx)
   if (id && only && only !== id) return null
   return (
@@ -40,7 +40,8 @@ const ProBadge = () => (
   <span className="flex items-center gap-1 rounded-full bg-[rgb(var(--accent-soft))] px-2 py-0.5 text-[10px] font-bold uppercase text-[rgb(var(--accent))]"><Crown size={10} /> Pro</span>
 )
 
-export default function ProSettings({ onUpgrade, only }: { onUpgrade: () => void; only?: 'pin' | 'pro' }) {
+/** `only`: 'pin' = PIN lock (no decoy), 'decoy' = decoy PIN + decoy chats (opened from the hidden gesture), 'pro' = Pro tools */
+export default function ProSettings({ onUpgrade, only }: { onUpgrade: () => void; only?: 'pin' | 'pro' | 'decoy' }) {
   return (
     <OnlyCtx.Provider value={only}>
       <ProInner onUpgrade={onUpgrade} />
@@ -96,7 +97,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
       setOffOpen(false)
       setBioUnlockEnabled(false)
       setBioOn(false)
-      flash(true, 'PIN lock is off. Decoy PIN and chat locks were removed too.')
+      flash(true, only === 'pin' ? 'PIN lock is off. Chat locks were removed too.' : 'PIN lock is off. Decoy PIN and chat locks were removed too.')
     } else {
       setOffPin('')
       flash(false, 'That isn’t your current PIN.')
@@ -136,7 +137,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const f = pro.focus
   const overnight = f.startHour > f.endHour
 
-  if (!pro.isPro && only !== 'pin') {
+  if (!pro.isPro && only !== 'pin' && only !== 'decoy') {
     return (
       <Section title="Chatter Pro">
         <button onClick={onUpgrade} className="flex w-full items-center gap-3 rounded-2xl bg-gradient-to-br from-[#0B1210] to-[#1B3A2E] p-4 text-left text-white">
@@ -164,19 +165,19 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
         </div>
       </Section>
 
-      <Section title="PIN lock & decoy profile" id="pin">
+      <Section title={only === 'pin' ? 'PIN lock' : 'PIN lock & decoy profile'} id="pin">
         <div className="rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Lock size={15} className="text-[rgb(var(--accent))]" /> PIN lock {pro.hasPins ? <span className="ml-auto flex items-center gap-1 text-xs text-[rgb(var(--accent))]"><Check size={12} /> On</span> : null}</div>
-          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN when it opens and before logging out. After 5 wrong PINs it makes you wait, longer each time. A PIN is 4 or more characters. A separate decoy PIN opens a harmless chat history instead of your real one.</p>
+          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN when it opens and before logging out. After 5 wrong PINs it makes you wait, longer each time. A PIN is 4 or more characters.{only !== 'pin' && ' A separate decoy PIN opens a harmless chat history instead of your real one.'}</p>
           <div className="grid gap-2 sm:grid-cols-2">
             <SecretInput value={pin} onChange={setPin} maxLength={PIN_MAX} placeholder={pro.hasPins ? 'New real PIN' : 'Real PIN (4+ characters)'} label="Real PIN" autoComplete="new-password" className={`${field} w-full`} />
-            <SecretInput value={decoy} onChange={setDecoy} maxLength={PIN_MAX} placeholder={pro.decoyPinHash ? 'New decoy PIN' : 'Decoy PIN (optional)'} label="Decoy PIN" autoComplete="new-password" className={`${field} w-full`} />
+            {only !== 'pin' && <SecretInput value={decoy} onChange={setDecoy} maxLength={PIN_MAX} placeholder={pro.decoyPinHash ? 'New decoy PIN' : 'Decoy PIN (optional)'} label="Decoy PIN" autoComplete="new-password" className={`${field} w-full`} />}
             <SecretInput value={pin2} onChange={setPin2} maxLength={PIN_MAX} placeholder="Type the real PIN again" label="Confirm real PIN" autoComplete="new-password" className={`${field} w-full`} />
-            <SecretInput value={decoy2} onChange={setDecoy2} maxLength={PIN_MAX} placeholder="Type the decoy PIN again" label="Confirm decoy PIN" autoComplete="new-password" className={`${field} w-full`} />
+            {only !== 'pin' && <SecretInput value={decoy2} onChange={setDecoy2} maxLength={PIN_MAX} placeholder="Type the decoy PIN again" label="Confirm decoy PIN" autoComplete="new-password" className={`${field} w-full`} />}
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
             <button onClick={savePins} className="rounded-xl bg-[rgb(var(--accent))] px-4 py-2 text-xs font-semibold text-[rgb(var(--accent-foreground))]">Save PINs</button>
-            {pro.decoyPinHash && <button onClick={pro.clearDecoy} className="flex items-center gap-1 text-xs font-semibold text-rose-500"><EyeOff size={13} /> Remove decoy PIN</button>}
+            {only !== 'pin' && pro.decoyPinHash && <button onClick={pro.clearDecoy} className="flex items-center gap-1 text-xs font-semibold text-rose-500"><EyeOff size={13} /> Remove decoy PIN</button>}
             {pro.hasPins && !offOpen && <button onClick={() => setOffOpen(true)} className="flex items-center gap-1 text-xs font-semibold text-rose-500"><ShieldOff size={13} /> Turn off PIN lock</button>}
             {msg && <span role="status" className={`text-xs ${msg.ok ? 'text-emerald-500' : 'text-rose-500'}`}>{msg.text}</span>}
           </div>
@@ -205,7 +206,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
             <p className="mt-1 text-xs text-[rgb(var(--text-secondary))]">Open a chat, tap the palette icon and choose <strong>Make this chat confidential</strong>. It then needs your PIN or fingerprint to open, and its preview and notifications hide the message text. {!pro.isPro && 'Free accounts can lock 1 chat; Pro locks as many as you like.'}</p>
           </div>
 
-          {pro.decoyPinHash && (
+          {only !== 'pin' && pro.decoyPinHash && (
             <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
               <p className="mb-2 text-xs font-semibold">Chats shown under the decoy PIN</p>
               <ul className="space-y-1">
@@ -237,14 +238,48 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
           </div>
 
           <details className="mt-4 border-t border-[rgb(var(--border))] pt-3 text-xs text-[rgb(var(--text-secondary))]">
-            <summary className="flex cursor-pointer items-center gap-1.5 font-semibold text-[rgb(var(--text-primary))]"><Info size={13} /> What the lock and decoy can and can’t do</summary>
+            <summary className="flex cursor-pointer items-center gap-1.5 font-semibold text-[rgb(var(--text-primary))]"><Info size={13} /> What the lock can and can’t do</summary>
             <ul className="mt-2 list-disc space-y-1 pl-5">
-              <li>The PIN lock and decoy live on this device. They stop someone who picks up your phone; they don’t protect a device that’s been fully copied, and anyone signing in to your account elsewhere sees your real chats.</li>
-              <li>The decoy only shows the chats you set up. Messages typed there stay on this device.</li>
+              <li>The PIN lock{only !== 'pin' && ' and decoy'} live{only === 'pin' ? 's' : ''} on this device. They stop someone who picks up your phone; they don’t protect a device that’s been fully copied, and anyone signing in to your account elsewhere sees your real chats.</li>
+              {only !== 'pin' && <li>The decoy only shows the chats you set up. Messages typed there stay on this device.</li>}
               <li>PINs are stored as a slow, salted hash, never as the PIN itself. A short PIN can still be guessed with enough time and access, so pick a longer PIN (letters and numbers are fine) if you can.</li>
               <li>Fingerprint unlock is handled by your phone. It’s only as strong as your phone’s screen lock.</li>
             </ul>
           </details>
+        </div>
+      </Section>
+
+      <Section title="Decoy PIN" id="decoy">
+        <div className="rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-4">
+          <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><EyeOff size={15} className="text-[rgb(var(--accent))]" /> Decoy PIN {pro.decoyPinHash ? <span className="ml-auto flex items-center gap-1 text-xs text-[rgb(var(--accent))]"><Check size={12} /> On</span> : null}</div>
+          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Entering this PIN instead of your real one opens a harmless look-alike Chatter. Your real chats, contacts, calls and notifications are never loaded there. {pro.hasPins ? '' : 'Set your real PIN in Privacy & security first.'}</p>
+          <div className="grid gap-2 sm:grid-cols-2">
+            <SecretInput value={decoy} onChange={setDecoy} maxLength={PIN_MAX} placeholder={pro.decoyPinHash ? 'New decoy PIN' : 'Decoy PIN (4+ characters)'} label="Decoy PIN" autoComplete="new-password" className={`${field} w-full`} />
+            <SecretInput value={decoy2} onChange={setDecoy2} maxLength={PIN_MAX} placeholder="Type the decoy PIN again" label="Confirm decoy PIN" autoComplete="new-password" className={`${field} w-full`} />
+          </div>
+          <div className="mt-3 flex flex-wrap items-center gap-3">
+            <button onClick={savePins} className="rounded-xl bg-[rgb(var(--accent))] px-4 py-2 text-xs font-semibold text-[rgb(var(--accent-foreground))]">Save decoy PIN</button>
+            {pro.decoyPinHash && <button onClick={pro.clearDecoy} className="flex items-center gap-1 text-xs font-semibold text-rose-500"><EyeOff size={13} /> Remove decoy PIN</button>}
+            {msg && <span role="status" className={`text-xs ${msg.ok ? 'text-emerald-500' : 'text-rose-500'}`}>{msg.text}</span>}
+          </div>
+          {pro.decoyPinHash && (
+            <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
+              <p className="mb-2 text-xs font-semibold">Chats shown under the decoy PIN</p>
+              <ul className="space-y-1">
+                {decoyItems.length === 0 && <li className="py-1 text-xs text-[rgb(var(--text-secondary))]">No decoy chats yet. Add some below.</li>}
+                {decoyItems.map((c) => (
+                  <li key={c.id} className="flex items-center gap-3 py-1">
+                    <img src={c.avatar} alt="" className="h-8 w-8 rounded-full object-cover" />
+                    <div className="min-w-0 flex-1"><p className="text-sm font-semibold">{c.name}</p><p className="truncate text-xs text-[rgb(var(--text-secondary))]">{c.text}</p></div>
+                    <Toggle on={!c.hidden} label={`Show ${c.name} in decoy`} onChange={(v) => updateDecoy(c.id, { hidden: !v })} />
+                  </li>
+                ))}
+              </ul>
+              <p className="mt-2 text-[11px] text-[rgb(var(--text-secondary))]">
+                {Number.isFinite(decoyMax) ? `Free plan shows the first ${decoyMax} decoy chat. Chatter Pro shows them all.` : 'All visible decoy chats are shown.'}
+              </p>
+            </div>
+          )}
         </div>
       </Section>
 

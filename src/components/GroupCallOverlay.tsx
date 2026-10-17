@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react'
-import { Mic, MicOff, PhoneOff, Phone, Video, VideoOff, Users } from 'lucide-react'
+import { Mic, MicOff, PhoneOff, Phone, Video, VideoOff, Users, Minimize2 } from 'lucide-react'
 import type { GroupInvite } from '../groupCall'
 import type { Group } from '../social'
 
@@ -18,6 +18,9 @@ type Props = {
   onLeave: () => void
   onToggleMute: () => void
   onToggleCam: () => void
+  minimized: boolean
+  onMinimize: () => void
+  onRestore: () => void
 }
 
 function Media({ stream, video, mute, mirror }: { stream: MediaStream | null; video: boolean; mute?: boolean; mirror?: boolean }) {
@@ -42,7 +45,7 @@ function Tile({ name, avatar, stream, video, mute, mirror, you }: { name: string
 export default function GroupCallOverlay(p: Props) {
   if (p.invite && !p.active) {
     return (
-      <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-[rgb(var(--bg-app))]/95 p-6 text-center">
+      <div className="fixed inset-0 z-[60] safe-overlay flex flex-col items-center justify-center gap-6 bg-[rgb(var(--bg-app))]/95 p-6 text-center">
         <span className="flex h-24 w-24 items-center justify-center rounded-full bg-[rgb(var(--accent-soft))] text-[rgb(var(--accent))] ring-4 ring-[rgb(var(--accent))]/40"><Users size={38} /></span>
         <div>
           <p className="text-xl font-bold">{p.invite.groupName}</p>
@@ -62,10 +65,25 @@ export default function GroupCallOverlay(p: Props) {
   const ids = Object.keys(p.streams)
   const nameOf = (id: string) => p.group?.members.find((m) => m.id === id)
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-[#0E0C10] text-white">
-      <header className="p-4 text-center">
-        <p className="font-semibold">{p.group?.name ?? 'Group call'}</p>
-        <p className="text-sm text-white/70">{ids.length === 0 ? 'Waiting for others to join…' : `${ids.length + 1} in the call`}</p>
+    <>
+    {/* minimized: the call (and its audio) keeps running behind a small bar */}
+    {p.minimized && (
+      <div className="fixed left-1/2 top-[calc(var(--sat)+0.5rem)] z-[60] flex -translate-x-1/2 items-center gap-2 rounded-full bg-[#0E0C10] py-1.5 pl-4 pr-1.5 text-sm text-white shadow-xl ring-1 ring-white/20">
+        <button onClick={p.onRestore} className="flex items-center gap-2" aria-label="Return to call">
+          <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-400" />
+          <span className="max-w-[10rem] truncate font-semibold">{p.group?.name ?? 'Group call'}</span>
+        </button>
+        <button onClick={p.onLeave} aria-label="Leave call" className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-500"><PhoneOff size={16} /></button>
+      </div>
+    )}
+    <div className={`fixed inset-0 z-[60] safe-overlay flex flex-col bg-[#0E0C10] text-white ${p.minimized ? 'hidden' : ''}`}>
+      <header className="flex items-center gap-2 p-4">
+        <button onClick={p.onMinimize} aria-label="Minimize call" title="Minimize" className="flex h-10 w-10 items-center justify-center rounded-full bg-white/15"><Minimize2 size={18} /></button>
+        <div className="min-w-0 flex-1 text-center">
+          <p className="truncate font-semibold">{p.group?.name ?? 'Group call'}</p>
+          <p className="text-sm text-white/70">{ids.length === 0 ? 'Waiting for others to join…' : `${ids.length + 1} in the call`}</p>
+        </div>
+        <span className="w-10" />
       </header>
       <div className={`grid flex-1 auto-rows-fr gap-3 overflow-y-auto p-3 ${ids.length >= 1 ? 'grid-cols-2' : 'grid-cols-1'} ${ids.length >= 4 ? 'md:grid-cols-3' : ''}`}>
         <Tile name="You" stream={p.local} video={video && !p.camOff} mute mirror you />
@@ -81,6 +99,7 @@ export default function GroupCallOverlay(p: Props) {
         <button onClick={p.onLeave} aria-label="Leave call" className="flex h-16 w-16 items-center justify-center rounded-full bg-rose-500 shadow-lg"><PhoneOff size={24} /></button>
       </div>
     </div>
+    </>
   )
 }
 

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import { avatarFor } from './auth'
+import { isPublicId, normalizePublicId } from './publicId'
 import type { Chat, Message } from './data'
 import { readPrivacyPrefs } from './prefs'
 
@@ -18,18 +19,12 @@ type Peer = {
   /** 'private' hides age, nickname, status and about from other people */
   profile_visibility?: 'public' | 'private'
 }
-const PEER_COLS = 'id, name, avatar, about, nickname, age, status, presence_mode, last_seen'
-/** Profile privacy lives in its own column. If the database hasn't got it yet this quietly returns nothing (= public). */
-async function fetchVisibility(ids: string[]): Promise<Record<string, 'public' | 'private'>> {
-  try {
-    const { data, error } = await supabase.from('profiles').select('id, profile_visibility').in('id', ids)
-    if (error || !data) return {}
-    return Object.fromEntries(data.map((x) => [x.id, x.profile_visibility === 'private' ? 'private' : 'public'])) as Record<string, 'public' | 'private'>
-  } catch {
-    return {}
-  }
+/** Profiles come through get_profiles(), which leaves out a private profile's nickname, age, status and about. */
+async function fetchPeers(ids: string[]): Promise<Record<string, Peer>> {
+  const { data } = await supabase.rpc('get_profiles', { p_ids: ids })
+  const rows = (data as Peer[] | null) ?? []
+  return Object.fromEntries(rows.map((x) => [x.id, { ...x, profile_visibility: x.profile_visibility === 'private' ? 'private' : 'public' }]))
 }
-const withVisibility = (rows: Peer[], vis: Record<string, 'public' | 'private'>) => Object.fromEntries(rows.map((x) => [x.id, { ...x, profile_visibility: vis[x.id] ?? 'public' }]))
 
 const LOCAL_READ = 'chatter.localread'
 const localRead = () => {
@@ -65,11 +60,8 @@ export function useRealChats(myId: string) {
   const ensurePeers = useCallback(async (ids: string[]) => {
     const missing = ids.filter((i) => !peersRef.current[i])
     if (!missing.length) return
-    const { data } = await supabase.from('profiles').select(PEER_COLS).in('id', missing)
-    if (data?.length) {
-      const vis = await fetchVisibility(data.map((x) => x.id))
-      setPeers((p) => ({ ...p, ...withVisibility(data as Peer[], vis) }))
-    }
+    const found = await fetchPeers(missing)
+    if (Object.keys(found).length) setPeers((p) => ({ ...p, ...found }))
   }, [])
 
   // keep online / last-seen / status fresh while the app is open
@@ -77,11 +69,8 @@ export function useRealChats(myId: string) {
     const t = window.setInterval(async () => {
       const ids = Object.keys(peersRef.current)
       if (!ids.length || document.visibilityState !== 'visible') return
-      const { data } = await supabase.from('profiles').select(PEER_COLS).in('id', ids)
-      if (data?.length) {
-        const vis = await fetchVisibility(ids)
-        setPeers((p) => ({ ...p, ...withVisibility(data as Peer[], vis) }))
-      }
+      const found = await fetchPeers(ids)
+      if (Object.keys(found).length) setPeers((p) => ({ ...p, ...found }))
     }, 30000)
     return () => window.clearInterval(t)
   }, [])
@@ -138,6 +127,17 @@ export function useRealChats(myId: string) {
     }
   }, [openPeer, rows, myId])
 
+  /** pull-to-refresh: reload the conversation list from the server */
+  const refresh = useCallback(async () => {
+    const { data, error } = await supabase.from('messages').select('*').order('created_at', { ascending: true }).limit(1000)
+    if (error || !data) return
+    const lr = localRead()
+    const at = new Date().toISOString()
+    const list = (data as Row[]).map((r) => (lr.has(r.id) && !r.read_at ? { ...r, read_at: at } : r))
+    setRows(list)
+    await ensurePeers([...new Set(list.map((r) => (r.sender_id === myId ? r.recipient_id : r.sender_id)))])
+  }, [myId, ensurePeers])
+
   const chats: Chat[] = useMemo(() => {
     const ids = new Set<string>(Object.keys(peers))
     rows.forEach((r) => ids.add(r.sender_id === myId ? r.recipient_id : r.sender_id))
@@ -181,14 +181,19 @@ export function useRealChats(myId: string) {
     [addRow, myId],
   )
 
-  const startChat = useCallback(async (email: string): Promise<{ ok: true; chatId: string } | { ok: false; error: string }> => {
-    const { data, error } = await supabase.rpc('find_profile_by_email', { p_email: email })
+  /** Starts a chat with a friend, found by their email or their ID# */
+  const startChat = useCallback(async (who: string): Promise<{ ok: true; chatId: string } | { ok: false; error: string }> => {
+    const byId = !who.includes('@')
+    if (byId && !isPublicId(who)) return { ok: false, error: 'Enter a valid email or an ID# like K7QM-4XZ2.' }
+    const { data, error } = byId
+      ? await supabase.rpc('find_profile_by_public_id', { p_id: normalizePublicId(who) })
+      : await supabase.rpc('find_profile_by_email', { p_email: who })
     if (error) return { ok: false, error: 'Could not search right now. Try again.' }
     const found = (data as Peer[] | null)?.[0]
-    if (!found) return { ok: false, error: 'No Chatter user with that email yet. Invite them to join!' }
+    if (!found) return { ok: false, error: byId ? 'No Chatter user with that ID#.' : 'No Chatter user with that email yet. Invite them to join!' }
     setPeers((p) => ({ ...p, [found.id]: found }))
     return { ok: true, chatId: REAL_PREFIX + found.id }
   }, [])
 
-  return { chats, loaded, send, startChat, setOpenPeer }
+  return { chats, loaded, send, startChat, setOpenPeer, refresh }
 }

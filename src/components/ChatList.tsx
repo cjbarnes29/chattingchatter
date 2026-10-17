@@ -1,3 +1,4 @@
+import { maskName, type InboxPrivacy } from '../inboxPrivacy'
 import { Star, Search, Pin, BellOff, Plus, MessageSquarePlus, Crown, Users, Archive, ArrowLeft, Sun, Moon, Home, Lock } from 'lucide-react'
 import { usePro } from '../pro'
 import { requestLock } from '../appLock'
@@ -34,6 +35,10 @@ type Props = {
   onArchiveChat?: (id: string, v: boolean) => void
   /** optional home dashboard, shown as a "Home" tab on small screens */
   dashboard?: React.ReactNode
+  /** real-account inbox privacy options (never passed in the decoy profile) */
+  inboxPrivacy?: InboxPrivacy
+  /** pull the list down (or press the refresh button) to reload from the server */
+  onRefresh?: () => Promise<void>
 }
 
 const DENSITY: Record<Density, { row: string; avatar: string; name: string }> = {
@@ -88,7 +93,34 @@ function SwipeRow({ chat, enabled, archived, onPin, onArchive, children }: { cha
   )
 }
 
-export default function ChatList({ chats: rawChats, activeId, query, onQuery, onSelect, dark, onToggleDark, onOpenSettings, onUpgrade, onNewChat, onOpenContacts, showArchived, archivedCount, onToggleArchived, isPro, stories, onNewGroup, onPinChat, onArchiveChat, dashboard, selfAvatar }: Props) {
+export default function ChatList({ chats: rawChats, activeId, query, onQuery, onSelect, dark, onToggleDark, onOpenSettings, onUpgrade, onNewChat, onOpenContacts, showArchived, archivedCount, onToggleArchived, isPro, stories, onNewGroup, onPinChat, onArchiveChat, dashboard, selfAvatar, inboxPrivacy, onRefresh }: Props) {
+  const [pull, setPull] = useState(0)
+  const [refreshing, setRefreshing] = useState(false)
+  const pullStart = useRef<number | null>(null)
+  const PULL_TRIGGER = 64
+  const doRefresh = async () => {
+    if (!onRefresh || refreshing) return
+    setRefreshing(true)
+    try { await onRefresh() } finally { setRefreshing(false); setPull(0) }
+  }
+  const onPullStart = (e: React.TouchEvent<HTMLElement>) => {
+    pullStart.current = e.currentTarget.scrollTop <= 0 ? e.touches[0].clientY : null
+  }
+  const onPullMove = (e: React.TouchEvent<HTMLElement>) => {
+    if (pullStart.current === null || !onRefresh) return
+    const dy = e.touches[0].clientY - pullStart.current
+    if (dy > 0 && e.currentTarget.scrollTop <= 0) setPull(Math.min(PULL_TRIGGER + 16, dy * 0.5))
+    else setPull(0)
+  }
+  const onPullEnd = () => {
+    const go = pull >= PULL_TRIGGER
+    pullStart.current = null
+    if (go) void doRefresh()
+    else setPull(0)
+  }
+  const priv = inboxPrivacy
+  const shownName = (n: string) => (priv?.maskNames ? maskName(n) : n)
+  const avatarCls = priv?.blurAvatars ? 'blur-md' : ''
   const { user } = useAuth()
   const ap = useAppearance()
   const ui = useInterface()
@@ -248,7 +280,12 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
               {showArchived ? 'Back to inbox' : `Archived (${archivedCount})`}
             </button>
           )}
-          <ul className={`flex-1 overflow-y-auto px-2 pb-4 ${ui.inboxLayout === 'grid' ? 'grid auto-rows-min grid-cols-3 content-start gap-1 sm:grid-cols-4 md:grid-cols-3' : ''}`}>
+          {onRefresh && (pull > 0 || refreshing) && (
+            <div role="status" aria-live="polite" className="flex items-center justify-center gap-2 overflow-hidden text-xs text-[rgb(var(--text-secondary))] transition-[height]" style={{ height: refreshing ? 28 : Math.min(28, pull / 2) }}>
+              {refreshing ? 'Refreshing…' : pull >= PULL_TRIGGER ? 'Release to refresh' : 'Pull to refresh'}
+            </div>
+          )}
+          <ul onTouchStart={onPullStart} onTouchMove={onPullMove} onTouchEnd={onPullEnd} onTouchCancel={onPullEnd} className={`flex-1 overflow-y-auto px-2 pb-4 ${ui.inboxLayout === 'grid' ? 'grid auto-rows-min grid-cols-3 content-start gap-1 sm:grid-cols-4 md:grid-cols-3' : ''}`}>
             {sorted.length === 0 && (
               <li className="col-span-full px-4 py-10 text-center text-sm text-[rgb(var(--text-secondary))]">
                 {query ? `No chats match “${query}”.` : activeTab === 'fav' ? 'No favorites yet. Open a chat, tap the palette icon and choose Add to Favorites.' : activeTab === 'groups' ? 'No groups yet. Tap New group to make one.' : activeTab === 'unread' ? 'You’re all caught up.' : 'No chats yet.'}
@@ -261,17 +298,17 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
                     <li key={chat.id}>
                       <button
                         onClick={() => onSelect(chat.id)}
-                        title={chat.name}
+                        title={priv?.maskNames ? undefined : chat.name}
                         className={`relative flex w-full flex-col items-center gap-1.5 rounded-xl px-1 py-3 text-center transition ${active ? 'bg-[rgb(var(--accent-soft))]' : 'hover:bg-[rgb(var(--bg-panel-soft))]'}`}
                       >
                         <span className="relative">
-                          <img src={chat.avatar} alt="" className={`${ui.density === 'compact' ? 'h-11 w-11' : ui.density === 'spacious' ? 'h-16 w-16' : 'h-14 w-14'} rounded-full object-cover`} />
-                          {chat.online && <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-[rgb(var(--bg-panel))]" />}
-                          {chat.unread > 0 && <span className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-[rgb(var(--accent-foreground))] ${chat.muted ? 'bg-[rgb(var(--text-tertiary))]' : 'bg-[rgb(var(--accent))]'}`}>{chat.unread}</span>}
+                          <img src={chat.avatar} alt="" className={`${ui.density === 'compact' ? 'h-11 w-11' : ui.density === 'spacious' ? 'h-16 w-16' : 'h-14 w-14'} rounded-full object-cover ${avatarCls}`} />
+                          {chat.online && !priv?.hideActivity && <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-[rgb(var(--bg-panel))]" />}
+                          {chat.unread > 0 && !priv?.hideActivity && <span className={`absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold text-[rgb(var(--accent-foreground))] ${chat.muted ? 'bg-[rgb(var(--text-tertiary))]' : 'bg-[rgb(var(--accent))]'}`}>{chat.unread}</span>}
                         </span>
                         <span className="flex w-full items-center justify-center gap-1 text-xs font-semibold">
                           {chat.pinned && <Pin size={10} className="shrink-0 fill-current" style={{ color: chat.pinColor }} />}
-                          <span className="truncate">{chat.name}</span>
+                          <span className="truncate">{shownName(chat.name)}</span>
                         </span>
                       </button>
                     </li>
@@ -290,15 +327,15 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
                         }`}
                       >
                         <div className="relative shrink-0">
-                          <img src={chat.avatar} alt="" className={`${d.avatar} rounded-full object-cover`} />
+                          <img src={chat.avatar} alt="" className={`${d.avatar} rounded-full object-cover ${avatarCls}`} />
                           {chat.isGroup && <span className="absolute -bottom-0.5 -right-0.5 flex h-5 w-5 items-center justify-center rounded-full bg-[rgb(var(--bg-panel))] text-[rgb(var(--accent))] ring-2 ring-[rgb(var(--bg-panel))]"><Users size={11} /></span>}
-                          {chat.online && (
+                          {chat.online && !priv?.hideActivity && (
                             <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full bg-emerald-500 ring-2 ring-[rgb(var(--bg-panel))]" />
                           )}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center justify-between gap-2">
-                            <p className={`truncate font-semibold ${d.name}`}>{chat.name}</p>
+                            <p className={`truncate font-semibold ${d.name}`}>{shownName(chat.name)}</p>
                             <span className={`shrink-0 text-xs ${chat.unread > 0 ? 'text-[rgb(var(--accent))] font-semibold' : 'text-[rgb(var(--text-tertiary))]'}`}>
                               {chat.messages[chat.messages.length - 1]?.time}
                             </span>
@@ -308,14 +345,14 @@ export default function ChatList({ chats: rawChats, activeId, query, onQuery, on
                               isLocked(chat.id) ? (
                                 <p className="flex items-center gap-1 truncate text-sm italic text-[rgb(var(--text-secondary))]"><Lock size={12} className="shrink-0" /> Locked chat</p>
                               ) : (
-                                <p className={`text-sm text-[rgb(var(--text-secondary))] ${ui.preview === 2 ? 'line-clamp-2 break-words' : 'truncate'}`}>{lastMessage(chat)}</p>
+                                <p className={`text-sm text-[rgb(var(--text-secondary))] ${ui.preview === 2 ? 'line-clamp-2 break-words' : 'truncate'}`}>{priv?.hidePreviews ? 'Message hidden' : lastMessage(chat)}</p>
                               )
                             )}
                             <div className="ml-auto flex shrink-0 items-center gap-1.5">
                               {chat.favorite && <Star size={13} className="fill-amber-400 text-amber-400" />}
                               {chat.pinned && <Pin size={13} className="fill-current" style={{ color: chat.pinColor }} />}
                               {chat.muted && <BellOff size={13} className="text-[rgb(var(--text-tertiary))]" />}
-                              {chat.unread > 0 && (
+                              {chat.unread > 0 && !priv?.hideActivity && (
                                 <span className={`flex h-5 min-w-5 items-center justify-center rounded-full px-1.5 text-[11px] font-bold ${chat.muted ? 'bg-[rgb(var(--text-tertiary))]' : 'bg-[rgb(var(--accent))]'} text-[rgb(var(--accent-foreground))]`}>
                                   {chat.unread}
                                 </span>
