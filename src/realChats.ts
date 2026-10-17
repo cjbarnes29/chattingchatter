@@ -76,16 +76,17 @@ export function useRealChats(myId: string) {
 
   useEffect(() => {
     let cancelled = false
+    // newest 1000, shown oldest first (ascending + limit would keep the oldest and drop new messages)
     supabase
       .from('messages')
       .select('*')
-      .order('created_at', { ascending: true })
+      .order('created_at', { ascending: false })
       .limit(1000)
       .then(async ({ data }) => {
         if (cancelled) return
         const lr = localRead()
         const at = new Date().toISOString()
-        const list = ((data ?? []) as Row[]).map((r) => (lr.has(r.id) && !r.read_at ? { ...r, read_at: at } : r))
+        const list = ((data ?? []) as Row[]).reverse().map((r) => (lr.has(r.id) && !r.read_at ? { ...r, read_at: at } : r))
         setRows(list)
         await ensurePeers([...new Set(list.map((r) => (r.sender_id === myId ? r.recipient_id : r.sender_id)))])
         if (!cancelled) setLoaded(true)

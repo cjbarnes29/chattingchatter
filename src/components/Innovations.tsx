@@ -109,17 +109,31 @@ export function SmartReplies({ lastText, onPick }: { lastText?: string; onPick: 
   )
 }
 
+// the browser speech API has no TypeScript types; only the parts used here
+type SpeechRec = {
+  lang: string
+  interimResults: boolean
+  continuous: boolean
+  onresult: (ev: { results: ArrayLike<ArrayLike<{ transcript: string }>> }) => void
+  onerror: (ev: { error: string }) => void
+  onend: () => void
+  start: () => void
+  stop: () => void
+}
+type SpeechRecCtor = new () => SpeechRec
+
 export function VoiceToText({ onText }: { onText: (t: string) => void }) {
   const [listening, setListening] = useState(false)
   const [err, setErr] = useState('')
-  const recRef = useRef<any>(null)
+  const recRef = useRef<SpeechRec | null>(null)
   const toggle = async () => {
     if (listening) {
       recRef.current?.stop()
       return
     }
     setErr('')
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    const w = window as unknown as { SpeechRecognition?: SpeechRecCtor; webkitSpeechRecognition?: SpeechRecCtor }
+    const SR = w.SpeechRecognition || w.webkitSpeechRecognition
     if (!SR) return setErr('Voice typing is not supported in this browser. Use the mic on your keyboard.')
     // Ask for the microphone first so the permission prompt always appears
     try {
@@ -135,12 +149,12 @@ export function VoiceToText({ onText }: { onText: (t: string) => void }) {
     rec.lang = navigator.language || 'en-US'
     rec.interimResults = true
     rec.continuous = false
-    rec.onresult = (ev: any) => {
+    rec.onresult = (ev) => {
       let t = ''
       for (let i = 0; i < ev.results.length; i++) t += ev.results[i][0].transcript
       onText(t)
     }
-    rec.onerror = (ev: any) => setErr(ev.error === 'not-allowed' ? 'Microphone is blocked. Allow it in settings.' : ev.error === 'no-speech' ? 'Did not hear anything. Try again.' : 'Voice typing failed. Try again.')
+    rec.onerror = (ev) => setErr(ev.error === 'not-allowed' ? 'Microphone is blocked. Allow it in settings.' : ev.error === 'no-speech' ? 'Did not hear anything. Try again.' : 'Voice typing failed. Try again.')
     rec.onend = () => setListening(false)
     try {
       rec.start()

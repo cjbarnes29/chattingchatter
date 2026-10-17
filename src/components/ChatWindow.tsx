@@ -125,7 +125,6 @@ function StatusIcon({ status }: { status?: Message['status'] }) {
   return <CheckCheck size={14} className="text-sky-400" />
 }
 
-const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
 export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, polls, calendar }: Props) {
@@ -170,7 +169,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
   const [ghost, setGhost] = useState(false)
   const [holding, setHolding] = useState(false)
   const [wiped, setWiped] = useState(false)
-  const holdTimer = useRef<ReturnType<typeof setTimeout>>()
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
   const exitGhost = useCallback(() => {
     setGhost((g) => {
       if (g) {
@@ -430,7 +429,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
             const hidden = m.private && !unlocked
             const tags = tagsOf(m)
             const reaction = edits.msgs[m.id]?.reaction
-            const quoteMatch = !hidden && !story0(m.text) ? /^↪ ([^\n]*)\n([\s\S]*)$/.exec(m.text) : null
+            const quoteMatch = !hidden ? /^↪ ([^\n]*)\n([\s\S]*)$/.exec(m.text) : null
             const viewed = !m.fromMe && i === visibleMessages.length - 1
             const story = !hidden && isEmojiStory(m.text)
             return (

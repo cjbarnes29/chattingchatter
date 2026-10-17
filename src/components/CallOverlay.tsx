@@ -49,7 +49,6 @@ const STATUS: Record<CallState, string> = {
 export default function CallOverlay(p: Props) {
   if (p.state === 'idle') return null
   const isVideo = p.media === 'video'
-  const showCall = p.state !== 'ringing'
 
   // Incoming ring screen
   if (p.incoming || p.state === 'ringing') {

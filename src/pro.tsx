@@ -105,11 +105,15 @@ function load(email: string): ProData {
 export function ProProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const email = user?.email ?? ''
-  const [data, setData] = useState<ProData>(DEFAULT)
-
-  useEffect(() => {
-    if (email) setData(load(email))
-  }, [email])
+  // Loaded during render, never in an effect: an effect would leave one render with no PIN,
+  // in which the real chats would be shown before the lock screen.
+  const [store, setStore] = useState(() => ({ email, data: email ? load(email) : DEFAULT }))
+  let data = store.data
+  if (store.email !== email) {
+    data = email ? load(email) : DEFAULT
+    setStore({ email, data })
+  }
+  const setData = useCallback((next: ProData) => setStore({ email, data: next }), [email])
 
   // Every update starts from the newest copy, so quick changes in a row never undo each other.
   const latest = useRef(data)
@@ -127,7 +131,7 @@ export function ProProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [email],
+    [email, setData],
   )
 
   // plan expiry

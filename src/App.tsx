@@ -29,7 +29,7 @@ import { StoriesRow, StoryComposer, StoryViewer } from './components/Stories'
 import CallOverlay from './components/CallOverlay'
 import { useContacts, findRegisteredByEmails, pickPhoneContacts } from './contacts'
 import ContactsPanel from './components/ContactsPanel'
-import { Archive, BellRing, X, ShieldAlert } from 'lucide-react'
+import { BellRing, X, ShieldAlert } from 'lucide-react'
 import { useEvents, fmtWhen, remindLabel } from './calendar'
 import { useChatStyle, setLocalPin, playSound, DEFAULT_PIN } from './chatStyle'
 import { useIsDark, toggleDark, startInterfaceSync, useInterface } from './interface'
@@ -51,14 +51,17 @@ function Gate() {
   const { user, recovering } = useAuth()
   const { hasPins, isPro, autoLock, takeIntrusions } = usePro()
   const bioUnlock = isPro && bioUnlockEnabled() && biometricEnrolled()
-  const [unlocked, setUnlockedState] = useState<'none' | 'real' | 'decoy'>('none')
+  // an unlock belongs to the account that unlocked; another account signing in on this device starts locked
+  const [unlockedFor, setUnlockedState] = useState<{ uid: string | null; v: 'none' | 'real' | 'decoy' }>({ uid: null, v: 'none' })
+  const uid = user?.id ?? null
+  const unlocked = unlockedFor.uid === uid ? unlockedFor.v : 'none'
   const [intrusions, setIntrusions] = useState<number[]>([])
   const [exitOpen, setExitOpen] = useState(false)
   useBackTrap(() => setExitOpen(true))
   const setUnlocked = useCallback((v: 'none' | 'real' | 'decoy') => {
     if (v === 'none') forgetOpenedChats()
-    setUnlockedState(v)
-  }, [])
+    setUnlockedState({ uid, v })
+  }, [uid])
   // decoy chats are kept per account
   useEffect(() => setDecoyOwner(user?.id ?? null), [user?.id])
   const unlockReal = () => {

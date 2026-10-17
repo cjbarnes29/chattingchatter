@@ -28,7 +28,7 @@ export function useGroupCall(myId: string, myName: string, groups: Group[]) {
   const room = useRef<Chan | null>(null)
   const localRef = useRef<MediaStream | null>(null)
   const rings = useRef(new Map<string, Chan>())
-  const inviteTimer = useRef<number>()
+  const inviteTimer = useRef<number | undefined>(undefined)
   const groupsRef = useRef(groups)
   groupsRef.current = groups
 

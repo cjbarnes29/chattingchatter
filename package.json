@@ -50,6 +50,8 @@
     "android:aab": "vite build && cap sync android && cd android && ./gradlew bundleRelease",
     "sync": "bash scripts/sync.sh",
     "lint": "eslint .",
+    "typecheck": "tsc -p tsconfig.app.json --noEmit",
+    "test": "node --test --experimental-strip-types --no-warnings tests/*.test.ts",
     "preview": "vite preview"
   },
   "dependencies": {

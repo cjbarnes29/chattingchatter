@@ -114,9 +114,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [uid])
 
-  // "Last active" heartbeat so contacts can see when you are online (while the app is open)
+  // "Last active" heartbeat so contacts can see when you are online (while the app is open).
+  // Not sent when you appear offline: profiles are readable by other users, so the time itself would show you.
+  const appearOffline = profile?.presence_mode === 'offline'
   useEffect(() => {
-    if (!uid) return
+    if (!uid || appearOffline) return
     const beat = () => {
       if (document.visibilityState === 'visible') supabase.from('profiles').update({ last_seen: new Date().toISOString() }).eq('id', uid).then(() => {})
     }
@@ -127,7 +129,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       window.clearInterval(t)
       document.removeEventListener('visibilitychange', beat)
     }
-  }, [uid])
+  }, [uid, appearOffline])
 
   const sendPasswordCode: AuthState['sendPasswordCode'] = useCallback(async () => {
     const email = session?.user.email
