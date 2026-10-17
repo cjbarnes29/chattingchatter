@@ -107,7 +107,8 @@ Never commit the keystore or passwords to the repository.
 
 | Check | Result |
 |---|---|
-| CI Android build with the native plugin (run 18) | Compiled and packaged; `versionCode 18`, `versionName 1.3.18`, target SDK 36 |
+| CI Android build with the native plugin (run 21, commit `37a5466`) | Compiled and packaged: `versionCode 21`, `versionName 1.3.21`, target SDK 36, APK signature v2 verifies (debug key). APK is 4.8 MB, down from 21.5 MB, because the website's copy is no longer packed inside |
+| Contents of the published test APK (downloaded and unpacked) | Contains `ChatterDevicePlugin`, the permission screens and the App permissions page; no `chatter.apk` inside |
 | Final permission list in the built APK (aapt2) | Exactly the list above; no storage, location, contacts or exact-alarm permissions |
 | Browser tests of the permission flow, using a stand-in for the native plugin (29 checks) | All pass: explanation shown before Android's prompt and nothing requested until Continue; Not now requests nothing; "don't ask again" leads to Open phone settings; already-blocked goes straight to settings help; video call needs camera and mic, voice call only mic; BiometricPrompt success, cancel, lockout and not-enrolled; notification permission; App permissions page states and buttons; no horizontal scroll at 390 px; no page errors |
 | TypeScript, ESLint, `vite build` | No new errors (same counts as `main`) |
