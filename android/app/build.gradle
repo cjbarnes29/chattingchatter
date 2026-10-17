@@ -1,5 +1,8 @@
 apply plugin: 'com.android.application'
 
+// CI passes the workflow run number, so every release build is newer than the last one.
+def buildNumber = (System.getenv("VERSION_CODE") ?: "4") as int
+
 android {
     namespace = "app.chatter.messenger"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +10,8 @@ android {
         applicationId "app.chatter.messenger"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 4
-        versionName "1.3"
+        versionCode buildNumber
+        versionName "1.3.${buildNumber}"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.

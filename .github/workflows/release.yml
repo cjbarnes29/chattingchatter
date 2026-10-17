@@ -49,6 +49,8 @@ jobs:
 
       - name: Build APK
         working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
         run: |
           set +e
           gradle assembleDebug --no-daemon --console=plain --stacktrace 2>&1 | tee ../gradle.log
