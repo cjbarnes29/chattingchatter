@@ -1,3 +1,5 @@
+import type { Poll } from './social'
+
 export type Message = {
   id: string
   fromMe: boolean
@@ -8,6 +10,7 @@ export type Message = {
   tags?: ('work' | 'plans' | 'ideas' | 'memories')[]
   viewing?: boolean
   day?: number
+  poll?: Poll
 }
 
 export type Chat = {

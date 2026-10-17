@@ -9,7 +9,9 @@ import { CalendarDays, Reply, MoreHorizontal, X as XIcon } from 'lucide-react'
 import { useEdits, editMessage } from '../edits'
 import { readGesturePrefs } from '../prefs'
 import { MessageSheet, PersonEditor } from './EditSheets'
-import { Palette } from 'lucide-react'
+import { Palette, BarChart3 } from 'lucide-react'
+import { CreatePollModal, PollCard } from './Polls'
+import type { GroupMember } from '../social'
 import ChatStyleSheet from './ChatStyleSheet'
 import { ProfileSheet, PhotoZoom } from './ProfileView'
 import { useAppearance } from '../appearance'
@@ -96,6 +98,14 @@ type Props = {
   onOpenGroup?: () => void
   onPinChat?: (v: boolean) => void
   chatActions?: ChatActions
+  polls?: {
+    myId: string
+    members: GroupMember[]
+    isAdmin: boolean
+    onCreate: (question: string, options: string[], multi: boolean) => Promise<{ ok: boolean; error?: string }>
+    onVote: (pollId: string, options: number[]) => void
+    onClose: (pollId: string) => void
+  }
   calendar?: {
     myId: string
     events: CalEvent[]
@@ -114,7 +124,7 @@ function StatusIcon({ status }: { status?: Message['status'] }) {
 const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
-export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, calendar }: Props) {
+export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, polls, calendar }: Props) {
   const cstyle = useChatStyle()
   const [styleOpen, setStyleOpen] = useState(false)
   const edits = useEdits()
@@ -142,6 +152,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
   const [replyTo, setReplyTo] = useState<string | null>(null)
   const edge = useRef<{ x: number; y: number } | null>(null)
   const [calOpen, setCalOpen] = useState(false)
+  const [pollOpen, setPollOpen] = useState(false)
   const [draft, setDraft] = useState('')
   const [menuOpen, setMenuOpen] = useState(false)
   const [unlocked, setUnlocked] = useState(false)
@@ -434,7 +445,16 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
                         : `rounded-bl-sm ${viewed ? 'bg-[rgb(var(--bubble-in))] ring-1 ring-[rgb(var(--accent))]/30' : 'bg-[rgb(var(--bubble-in))]'}`
                     }`}
                   >
-                    {hidden ? (
+                    {m.poll && polls && !hidden ? (
+                      <PollCard
+                        poll={m.poll}
+                        myId={polls.myId}
+                        members={polls.members}
+                        canClose={m.poll.createdBy === polls.myId || polls.isAdmin}
+                        onVote={(opts) => polls.onVote(m.poll!.id, opts)}
+                        onClosePoll={() => polls.onClose(m.poll!.id)}
+                      />
+                    ) : hidden ? (
                       <p className="flex items-center gap-2 italic text-[rgb(var(--text-secondary))]">
                         <Lock size={14} /> Locked private message · tap to unlock
                       </p>
@@ -509,6 +529,11 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
         <button type="button" aria-label="Attach" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
           <Paperclip size={22} />
         </button>
+        {polls && (
+          <button type="button" onClick={() => setPollOpen(true)} aria-label="Create poll" title="Create poll" className="rounded-full p-2.5 text-[rgb(var(--text-secondary))] hover:bg-[rgb(var(--accent-soft))]">
+            <BarChart3 size={22} />
+          </button>
+        )}
         <textarea
           rows={1}
           value={draft}
@@ -547,6 +572,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
       {zoomOpen && <PhotoZoom src={chat.avatar} name={chat.name} onClose={() => setZoomOpen(false)} />}
       {profileOpen && <ProfileSheet chat={chat} onClose={() => setProfileOpen(false)} onZoom={() => setZoomOpen(true)} onEditContact={() => { setProfileOpen(false); setPersonOpen(true) }} />}
       {personOpen && <PersonEditor chatId={rawChat.id} name={chat.name} avatar={chat.avatar} edited={!!personEdit} onClose={() => setPersonOpen(false)} />}
+      {pollOpen && polls && <CreatePollModal onClose={() => setPollOpen(false)} onCreate={polls.onCreate} />}
       {calOpen && calendar && <CalendarPanel friend={chat.name.split(' ')[0]} {...calendar} onClose={() => setCalOpen(false)} />}
       {ghost && <GhostCanvas friend={chat.name.split(' ')[0]} chatId={chat.id} onSend={onSend} onExit={exitGhost} onUpgrade={onUpgrade} calendar={calendar} />}
     </section>
