@@ -19,7 +19,7 @@ export type User = {
 
 type ProfileRow = { name: string; avatar: string | null; about: string; nickname: string | null; age: number | null; status: string | null; presence_mode: string | null }
 
-type Result = { ok: true; needsConfirm?: boolean; existing?: boolean } | { ok: false; error: string; unconfirmed?: boolean }
+type Result = { ok: true; needsConfirm?: boolean; existing?: boolean; resendError?: string } | { ok: false; error: string; unconfirmed?: boolean }
 
 type AuthState = {
   user: User | null
@@ -65,6 +65,9 @@ const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e)
 // Supabase's built-in email sender allows only a few emails per hour per project.
 // Turn that technical error into a clear, friendly message.
 const friendlyError = (message: string) => {
+  // Supabase allows one email per address every ~60 seconds: "you can only request this after 42 seconds"
+  const wait = message.match(/after (\d+) seconds?/i)
+  if (wait) return `Please wait ${wait[1]} seconds before asking for another code.`
   if (/rate limit|too many|over_email_send_rate_limit|email rate/i.test(message))
     return 'Too many emails were sent recently. Please wait about an hour and try again, or use the email you already received.'
   return message
@@ -198,9 +201,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (error) return { ok: false, error: friendlyError(error.message) }
     // An existing account comes back with no identities. It may simply never have been confirmed,
     // so send a fresh code and let the person confirm it instead of dead-ending them.
+    // Supabase sends nothing for an account that is already confirmed (so nobody can probe which emails exist),
+    // and reports an error if a code was requested less than a minute ago. Pass that error on instead of hiding it.
     if (data.user && data.user.identities && data.user.identities.length === 0) {
-      await supabase.auth.resend({ type: 'signup', email })
-      return { ok: true, needsConfirm: true, existing: true }
+      const { error: resendError } = await supabase.auth.resend({ type: 'signup', email })
+      return { ok: true, needsConfirm: true, existing: true, resendError: resendError ? friendlyError(resendError.message) : undefined }
     }
     return { ok: true, needsConfirm: !data.session }
   }, [])
@@ -209,9 +214,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const email = rawEmail.trim().toLowerCase()
     const { error } = await supabase.auth.verifyOtp({ email, token: code.trim(), type: 'signup' })
     if (error) {
-      if (/expired/i.test(error.message)) return { ok: false, error: 'This code has expired. Tap “Resend code” for a new one.' }
-      if (/rate|too many|attempt/i.test(error.message)) return { ok: false, error: 'Too many tries. Please wait a few minutes and try again.' }
-      return { ok: false, error: 'That code is wrong or expired. Please check it and try again.' }
+      // Supabase uses one message ("Token has expired or is invalid") for both a wrong and an expired code,
+      // so check for rate limiting first and word the rest to cover both cases.
+      if (/rate limit|too many|attempt/i.test(error.message)) return { ok: false, error: 'Too many tries. Please wait a few minutes and try again.' }
+      return { ok: false, error: 'That code is wrong or has expired. Check it, or tap “Resend code” for a new one.' }
     }
     return { ok: true }
   }, [])
