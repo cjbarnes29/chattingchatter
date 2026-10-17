@@ -232,13 +232,13 @@ export default function Landing() {
                   <li>Open the file and allow installs from your browser when asked.</li>
                   <li>Tap <b>Install</b>, then open Chatter.</li>
                 </ol>
-                <p className="mt-2" style={{ opacity: 0.7 }}>Updating from an older version? Install over it and your account carries on.</p>
+                <p className="mt-2" style={{ opacity: 0.7 }}>Updating from an older version? Install over it. If Android says it can’t update, uninstall the old version first; your account and chats stay on the server.</p>
               </div>
               <div className="mt-4 flex items-center gap-4">
                 <img
                   alt="QR code to download the Chatter APK"
                   className="h-24 w-24 rounded-lg bg-white p-1"
-                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(window.location.origin + apk)}`}
+                  src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&data=${encodeURIComponent(apk.startsWith('http') ? apk : window.location.origin + apk)}`}
                 />
                 <p className="text-xs" style={{ opacity: 0.7 }}>On a computer? Scan this with your phone camera to download.</p>
               </div>

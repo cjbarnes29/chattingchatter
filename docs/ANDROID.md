@@ -16,7 +16,7 @@ Each build has its own version: version code = workflow run number, version name
 1. Open the link on the phone, or download it on a computer and send the file to the phone.
 2. Open `chatter.apk`. Android asks to allow installs from that app (Chrome, Files, …): **Settings → Allow from this source**, then go back.
 3. Tap **Install**, then **Open**.
-4. Play Protect may warn about an app it doesn't know. Chatter isn't on Google Play, so this is expected. Tap **More details → Install anyway** only if you got the file from the links above.
+4. If Google Play Protect shows a warning or **"App blocked to protect your device"**, stop there. Don't turn off Play Protect or work around the warning. See [Google Play Protect](#google-play-protect) below.
 
 **Updating:** install the new APK over the old one. If Android says *"App not installed"* or *"package conflicts with an existing package"*, the new APK was signed with a different key (see [Signing](#signing)). Uninstall Chatter and install again. Uninstalling removes data stored only on the phone (lock PIN, decoy chats, confidential-chat locks, local interface settings). Your account, chats and contacts are on the server and come back when you sign in.
 
@@ -64,7 +64,7 @@ The browser version still uses WebAuthn (the device's platform authenticator).
 - **Native code:** `android/app/src/main/java/app/chatter/messenger/ChatterDevicePlugin.java`, registered in `MainActivity.java`. It provides permission state and requests (camera, microphone, notifications), BiometricPrompt, reminder notifications (channel "Event reminders"), the "Save to" file picker, and opening Chatter's page in phone settings. The JavaScript side is `src/native.ts`; permission explanations are in `src/permissions.ts` and `src/components/PermissionPrompt.tsx`; the settings page is `src/components/AppPermissions.tsx`.
 - **In-call camera/microphone:** the web view asks Capacitor, which asks Android. Chatter asks first (with its explanation), so by the time the call starts the permission is already decided.
 - **CI:** `.github/workflows/release.yml` (Actions → *Release Chatter APK*). It runs on every push to `main` and on demand. The log's *Show APK version, permissions and signer* step prints the version, the final merged permission list and the signing certificate, so any change to permissions shows up there.
-- `public/chatter.apk` (the website's download copy) is excluded from the app's assets, so it no longer doubles the APK size.
+- No APK is stored in the repository any more (the website links to the GitHub release). `build.gradle` also excludes any `chatter.apk` from the app's assets, and CI fails the build if an APK, DEX, JAR, SO or ZIP file ends up inside `assets/`.
 
 ### Build locally
 
@@ -79,6 +79,36 @@ cd android && ./gradlew assembleDebug   # or: gradle assembleDebug
 ```
 
 Install on a phone with USB debugging on: `adb install -r android/app/build/outputs/apk/debug/app-debug.apk`.
+
+## Google Play Protect
+
+### What was found (17 October 2026)
+
+The APKs were unpacked and checked (manifest, permissions, components, signing certificate, contents, and code for risky APIs).
+
+| Check | Stable APK before the fix (1.3.17) | Fixed build |
+|---|---|---|
+| Another app packed inside | **Yes.** `assets/public/chatter.apk` (17 MB, an older Chatter APK) was inside, and it contained another APK (13 MB). Every build had packed the previous one, because the website's download copy lived in `public/`, which is copied into the app. | **None.** CI now refuses to publish an APK with this. |
+| Sensitive permissions Play Protect's fraud protection blocks (SMS, accessibility service, notification listener) | None | None |
+| Loading code at runtime, running shell commands, installing other apps, reading the installed-app list | None found | None found |
+| Exported components | Main screen (launcher, required); AndroidX profile receiver (protected by Android's DUMP permission) | Same |
+| Build type | Debug (`debuggable=true`) | Debug, until a release key is added |
+| Signing certificate | "CN=Android Debug", **a new one generated for every build** | Same, until a release key is added |
+
+### Likely causes, in order
+
+1. **An APK hidden inside the APK (confirmed, fixed).** An app that carries another installable app in its files is how "dropper" malware is built. Play Protect scans unknown apps for this, so this alone is enough to get the app blocked. This was a packaging mistake, not malicious code. Nothing in the app ever opened or installed the inner APK.
+2. **Debug build with a throwaway certificate (confirmed, needs your release key).** Each CI build was signed by a different, auto-generated "Android Debug" certificate and marked debuggable. Play Protect has no history for such a signer, so every build looks like an app from a brand-new, unknown developer. It also stops updates from installing over each other. Fix: add a release key ([Signing](#signing)). CI then builds a signed, non-debuggable release APK with the same certificate every time.
+3. **Unverified developer (possible; depends on your country).** Google is rolling out developer verification for apps installed outside Google Play on certified Android phones, starting with some countries in 2026. If your phone is in a covered country, apps from unverified developers can be blocked even when the app itself is clean. The fix is to verify yourself as a developer in the Android Developer Console and register the app's package name (`app.chatter.messenger`) and signing key. Check Google's current list of countries and dates in the Android developer verification documentation.
+
+Not the cause: target SDK (36 is current), permissions (only those listed above), or anything in the app's own code.
+
+### If it's still blocked after installing the fixed build
+
+- Note the **exact** wording of the dialog and any "More details" text, plus the phone model, Android version and country.
+- If Play Protect offers **Scan app** / **Send app for scanning**, choose it. That sends the app to Google for review and doesn't skip any check.
+- If Google confirms it's blocking a clean app, the developer can ask for a review through Google's Play Protect appeals form for developers. Using the release key (and developer verification where it applies) first gives that request the best chance.
+- Don't turn off Play Protect, and don't use "Install anyway" to get past a block.
 
 ## Signing
 
@@ -112,12 +142,13 @@ Never commit the keystore or passwords to the repository.
 | Final permission list in the built APK (aapt2) | Exactly the list above; no storage, location, contacts or exact-alarm permissions |
 | Browser tests of the permission flow, using a stand-in for the native plugin (29 checks) | All pass: explanation shown before Android's prompt and nothing requested until Continue; Not now requests nothing; "don't ask again" leads to Open phone settings; already-blocked goes straight to settings help; video call needs camera and mic, voice call only mic; BiometricPrompt success, cancel, lockout and not-enrolled; notification permission; App permissions page states and buttons; no horizontal scroll at 390 px; no page errors |
 | TypeScript, ESLint, `vite build` | No new errors (same counts as `main`) |
+| Play Protect investigation: the old stable APK and the new build unpacked and compared | Old APK carried two nested APKs; the new build carries none (see [Google Play Protect](#google-play-protect)). **Installation with Play Protect has not been verified on a phone yet.** |
 
 ### Not done yet: needs a real phone
 
 No Android phone or emulator was available while building this (the build environment can't download Android SDK parts or run an emulator). These need checking on a device before calling the Android release finished:
 
-1. Install the test APK on a clean phone (Android 13 or newer if possible, plus one older phone if available).
+1. **Install with Play Protect on.** Uninstall any old Chatter. In Chrome on the phone, open the test link and download, then open the file and install. Record whether Play Protect shows anything and its exact wording. Use Android 13 or newer if possible, plus one older phone if available.
 2. Open Chatter: **no permission prompt at launch**.
 3. Start a voice call: Chatter's microphone explanation → **Continue** → Android prompt → **Allow**. The call connects with audio.
 4. Start a video call: camera explanation → Allow. Your camera preview shows.

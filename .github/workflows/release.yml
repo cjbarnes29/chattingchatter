@@ -86,10 +86,18 @@ jobs:
           apk=android/app/build/outputs/apk/release/app-release.apk
           [ -f "$apk" ] || apk=android/app/build/outputs/apk/debug/app-debug.apk
           cp "$apk" chatter.apk
+      # An app carrying another app (or loose code) inside it looks like malware to Play Protect.
+      - name: Check APK has no apps or code packed in its assets
+        run: |
+          if unzip -Z1 chatter.apk | grep -Ei '^assets/.*\.(apk|aab|apks|xapk|dex|jar|so|zip)$'; then
+            echo "::error::The APK's assets contain the files listed above. Remove them from public/ or exclude them in android/app/build.gradle."
+            exit 1
+          fi
+          echo "OK: no APK, DEX, JAR, SO or ZIP files inside assets/"
       - name: Show APK version, permissions and signer
         run: |
           bt=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -1)
-          "$bt/aapt2" dump badging chatter.apk | grep -E "^package:|sdkVersion|targetSdkVersion"
+          "$bt/aapt2" dump badging chatter.apk | grep -E "^package:|sdkVersion|targetSdkVersion|application-debuggable" || true
           "$bt/aapt2" dump permissions chatter.apk
           "$bt/apksigner" verify --verbose --print-certs chatter.apk 2>&1 | grep -E "Verifies|scheme|Signer #1 certificate (DN|SHA-256)" || true
           ls -l chatter.apk

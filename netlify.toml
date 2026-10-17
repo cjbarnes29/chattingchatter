@@ -5,14 +5,6 @@
 [build.environment]
   NODE_VERSION = "22"
 
-# The APK is served straight from this site: yoursite.netlify.app/chatter.apk
-[[headers]]
-  for = "/chatter.apk"
-  [headers.values]
-    Content-Type = "application/vnd.android.package-archive"
-    Content-Disposition = "attachment; filename=chatter.apk"
-
-# Send every page address (e.g. /app, /settings) to the app so refreshing works.
 [[redirects]]
   from = "/*"
   to = "/index.html"
