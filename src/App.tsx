@@ -29,6 +29,10 @@ import { useGroups, useStories, useCall, GROUP_PREFIX, type Story, type Group } 
 import { CreateGroupModal, GroupSettingsModal } from './components/GroupPanels'
 import { StoriesRow, StoryComposer, StoryViewer } from './components/Stories'
 import CallOverlay from './components/CallOverlay'
+import GhostLauncher from './components/GhostLauncher'
+import GhostInviteOverlay from './components/GhostInviteOverlay'
+import { useGhostInvites, type GhostNotify } from './ghostInvites'
+import { readGhostPrefs } from './prefs'
 import { useContacts, findRegisteredByEmails, pickPhoneContacts } from './contacts'
 import ContactsPanel from './components/ContactsPanel'
 import { Archive, BellRing, X, ShieldAlert } from 'lucide-react'
@@ -390,6 +394,35 @@ function App() {
     return () => { void Device.setSecure({ enabled: false }).catch(() => {}) }
   }, [inboxPrivacy.blockCapture])
 
+  // ---- Ghost Canvas invitations: pick a person, they accept, then the canvas opens for both ----
+  const [ghostLauncher, setGhostLauncher] = useState<{ initialId: string | null } | null>(null)
+  const ghost = useGhostInvites(
+    user!.id,
+    (from) => {
+      const mode = readGhostPrefs().invites
+      if (mode === 'off' || contactApi.blockedIds.has(from)) return false
+      return mode === 'everyone' || contactApi.contacts.some((c) => c.id === from && !c.blocked)
+    },
+    (from) => real.chats.find((c) => c.id === REAL_PREFIX + from)?.name ?? contactApi.contacts.find((c) => c.id === from)?.name ?? 'Someone',
+  )
+  const ghostPeerChat = ghost.peerId ? real.chats.find((c) => c.id === REAL_PREFIX + ghost.peerId) : null
+  const ghostPeerContact = ghost.peerId ? contactApi.contacts.find((c) => c.id === ghost.peerId) : null
+  const ghostPeople = useMemo(() => {
+    const chatsOnly = real.chats.filter((c) => c.id.startsWith(REAL_PREFIX) && !c.isGroup)
+    const known = new Set(chatsOnly.map((c) => c.id))
+    const extra = contactApi.contacts
+      .filter((c) => !c.blocked && !known.has(REAL_PREFIX + c.id))
+      .map((c): Chat => ({ id: REAL_PREFIX + c.id, name: c.name, avatar: c.avatar, online: false, unread: 0, messages: [] }))
+    return [...chatsOnly, ...extra]
+  }, [real.chats, contactApi.contacts])
+  const inviteToGhost = async (chatId: string, notify: GhostNotify) => ghost.invite(chatId.slice(REAL_PREFIX.length), notify)
+  // when the invited person says yes, both sides land in that conversation and its canvas opens
+  const ghostActivePeer = ghost.active ? ghost.peerId : null
+  useEffect(() => {
+    if (ghostActivePeer) openChat(REAL_PREFIX + ghostActivePeer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ghostActivePeer])
+
   // a finished call must never leave a stale "minimized" flag for the next one
   useEffect(() => {
     if (call.state === 'idle') setCallMin(false)
@@ -403,6 +436,10 @@ function App() {
     // a live call is minimized by Back (never trapped); once minimized, Back works on the screen underneath
     if (gcall.active && !gcallMin) { setGcallMin(true); return true }
     if (call.state === 'ringing' || call.incoming) return true
+    if (ghost.incoming) { void ghost.decline(); return true }
+    if (ghost.outgoing) { void ghost.cancel(); return true }
+    if (ghostLauncher) { setGhostLauncher(null); return true }
+    if (ghost.active) { void ghost.end(); return true }
     if ((call.state === 'calling' || call.state === 'connecting' || call.state === 'connected') && !callMin) { setCallMin(true); return true }
     if (viewStory) { setViewStory(null); return true }
     if (composerOpen) { setComposerOpen(false); return true }
@@ -511,6 +548,10 @@ function App() {
               setNewChatOpen(false)
               setCreateGroupOpen(true)
             }}
+            onGhost={() => {
+              setNewChatOpen(false)
+              setGhostLauncher({ initialId: null })
+            }}
           />
         )}
         {createGroupOpen && (
@@ -582,6 +623,17 @@ function App() {
           onToggleMute={gcall.toggleMute}
           onToggleCam={gcall.toggleCam}
         />
+        {ghostLauncher && <GhostLauncher people={ghostPeople} initialId={ghostLauncher.initialId} onClose={() => setGhostLauncher(null)} onInvite={inviteToGhost} />}
+        <GhostInviteOverlay
+          incoming={ghost.incoming}
+          outgoing={ghost.outgoing}
+          notify={ghost.session?.notify ?? null}
+          name={ghostPeerChat?.name ?? ghostPeerContact?.name ?? 'Someone'}
+          avatar={ghostPeerChat?.avatar ?? ghostPeerContact?.avatar ?? user!.avatar}
+          onAccept={() => void ghost.accept()}
+          onDecline={() => void ghost.decline()}
+          onCancel={() => void ghost.cancel()}
+        />
         <CallOverlay
           state={call.state}
           media={call.media}
@@ -620,6 +672,9 @@ function App() {
               onBack={closeChat}
               onSend={sendMessage}
               onUpgrade={() => setUpgradeOpen(true)}
+              ghostSession={activeChat.id.startsWith(REAL_PREFIX) && ghost.active && ghost.peerId === peerOf(activeChat.id) && ghost.session ? { id: ghost.session.id } : null}
+              onGhostStart={activeChat.id.startsWith(REAL_PREFIX) ? () => setGhostLauncher({ initialId: activeChat.id }) : undefined}
+              onGhostEnd={activeChat.id.startsWith(REAL_PREFIX) ? () => void ghost.end() : undefined}
               onCall={activeChat.id.startsWith(REAL_PREFIX) ? placeCall : activeChat.id.startsWith(GROUP_PREFIX) ? placeGroupCall : undefined}
               onOpenGroup={activeGroup ? () => setGroupSettingsId(activeGroup.id) : undefined}
               polls={

@@ -156,9 +156,11 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
           <input type="range" min={2} max={12} value={ghost.inkWidth} onChange={(e) => setGhost({ inkWidth: +e.target.value })} aria-label="Brush thickness" className="w-28 accent-[rgb(var(--accent))]" />
         </div>
       </Row>
-      <Row title="Hold-to-stay time" desc="Seconds to press and hold before the canvas closes">
-        <select value={ghost.grace} onChange={(e) => setGhost({ grace: +e.target.value })} aria-label="Hold-to-stay time" className={sel}>
-          {[3, 5, 8, 12].map((s) => <option key={s} value={s}>{s} seconds</option>)}
+      <Row title="Who can invite me" desc="Every invitation still needs your OK before anything is shared">
+        <select value={ghost.invites} onChange={(e) => setGhost({ invites: e.target.value as 'everyone' | 'contacts' | 'off' })} aria-label="Who can invite me" className={sel}>
+          <option value="everyone">Everyone</option>
+          <option value="contacts">Contacts only</option>
+          <option value="off">Nobody</option>
         </select>
       </Row>
       <Row title="Dotted grid" desc="Show the faint dot grid behind drawings">
@@ -172,7 +174,7 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
       </Row>
       <div className="flex items-center gap-2 py-3">
         <Ghost size={13} className="text-[rgb(var(--text-tertiary))]" />
-        <p className="flex-1 text-[11px] text-[rgb(var(--text-secondary))]">Open a chat and tap the ghost icon to start a canvas. Changes apply the next time you open one.</p>
+        <p className="flex-1 text-[11px] text-[rgb(var(--text-secondary))]">Tap the ghost icon in a chat to invite someone. They choose whether to join. Changes apply the next time you open one.</p>
         <button onClick={resetGhost} className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))] hover:underline"><RotateCcw size={12} /> Reset</button>
       </div>
     </div>

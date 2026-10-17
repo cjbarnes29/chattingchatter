@@ -112,6 +112,12 @@ type Props = {
     onVote: (pollId: string, options: number[]) => void
     onClose: (pollId: string) => void
   }
+  /** real chats: the accepted Ghost Canvas session with this person, if there is one */
+  ghostSession?: { id: string } | null
+  /** real chats: open the "who to invite" sheet; the canvas itself only opens once they accept */
+  onGhostStart?: () => void
+  /** real chats: end the shared session for both people */
+  onGhostEnd?: () => void
   calendar?: {
     myId: string
     events: CalEvent[]
@@ -130,7 +136,7 @@ function StatusIcon({ status }: { status?: Message['status'] }) {
 const story0 = (_t: string) => false
 const DAY_LABELS = ['Today', 'Yesterday', 'Monday', 'Sunday', 'Friday']
 
-export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, decoy = false, polls, calendar }: Props) {
+export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUpgrade, onTyping, onCall, onOpenGroup, onPinChat, chatActions, allowLock = false, decoy = false, polls, calendar, ghostSession, onGhostStart, onGhostEnd }: Props) {
   const cstyle = useChatStyle()
   const pro = usePro()
   const opened = useSyncExternalStore(onOpenedChange, () => isChatOpened(rawChat.id))
@@ -176,6 +182,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
   const [wiped, setWiped] = useState(false)
   const holdTimer = useRef<ReturnType<typeof setTimeout>>()
   const exitGhost = useCallback(() => {
+    onGhostEnd?.()
     setGhost((g) => {
       if (g) {
         setWiped(true)
@@ -183,13 +190,24 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
       }
       return false
     })
-  }, [])
+  }, [onGhostEnd])
+  // Real chats need an accepted invitation: the canvas opens when the session starts and closes when it ends.
+  const liveGhostId = ghostSession?.id
+  useEffect(() => {
+    if (!onGhostStart) return
+    setGhost(!!liveGhostId)
+  }, [liveGhostId, onGhostStart])
+  const openGhost = () => {
+    if (!onGhostStart) return setGhost(true) // sample chats keep the solo demo canvas
+    if (liveGhostId) setGhost(true)
+    else onGhostStart()
+  }
   const startHold = (e: React.PointerEvent) => {
     if (e.target !== e.currentTarget && !(e.target as HTMLElement).dataset.bg) return
     setHolding(true)
     holdTimer.current = setTimeout(() => {
       setHolding(false)
-      setGhost(true)
+      openGhost()
     }, 800)
   }
   const cancelHold = () => {
@@ -260,7 +278,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
             </>
           )}
           {!chat.isGroup && (
-            <button onClick={() => setGhost(true)} aria-label="Open Ghost Canvas" title="Ghost Canvas" className="rounded-full p-2 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent-soft))]"><GhostIcon size={19} /></button>
+            <button onClick={openGhost} aria-label="Open Ghost Canvas" title="Ghost Canvas" className="rounded-full p-2 text-[rgb(var(--accent))] hover:bg-[rgb(var(--accent-soft))]"><GhostIcon size={19} /></button>
           )}
           {calendar && (
             <button onClick={() => setCalOpen(true)} aria-label="Open calendar" title="Calendar & event alarms" className="relative rounded-full p-2 hover:bg-[rgb(var(--accent-soft))]">
@@ -593,7 +611,7 @@ export default function ChatWindow({ chat: rawChat, typing, onBack, onSend, onUp
       {personOpen && <PersonEditor chatId={rawChat.id} name={chat.name} avatar={chat.avatar} edited={!!personEdit} onClose={() => setPersonOpen(false)} />}
       {pollOpen && polls && <CreatePollModal onClose={() => setPollOpen(false)} onCreate={polls.onCreate} />}
       {calOpen && calendar && <CalendarPanel friend={chat.name.split(' ')[0]} {...calendar} onClose={() => setCalOpen(false)} />}
-      {ghost && <GhostCanvas friend={chat.name.split(' ')[0]} chatId={chat.id} onSend={onSend} onExit={exitGhost} onUpgrade={onUpgrade} calendar={calendar} />}
+      {ghost && (!onGhostStart || liveGhostId) && <GhostCanvas friend={chat.name.split(' ')[0]} chatId={chat.id} sessionId={liveGhostId} onSend={onSend} onExit={exitGhost} onUpgrade={onUpgrade} calendar={calendar} />}
     </section>
   )
 }
