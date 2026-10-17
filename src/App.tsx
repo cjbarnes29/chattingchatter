@@ -195,6 +195,8 @@ function App() {
   })
   const contactApi = useContacts(user!.id)
   const [contactsOpen, setContactsOpen] = useState(false)
+  const [callMin, setCallMin] = useState(false)
+  const [gcallMin, setGcallMin] = useState(false)
   const [showArchived, setShowArchived] = useState(false)
 
   // Direct chats: hide blocked people, apply archive/pin/delete-history prefs from the contacts store
@@ -283,11 +285,13 @@ function App() {
   const placeCall = (media: 'voice' | 'video') => {
     const peer = peerOf(activeId)
     if (!peer) return
+    setCallMin(false)
     call.startCall(peer, media)
   }
   const placeGroupCall = (media: 'voice' | 'video') => {
     if (!activeId?.startsWith(GROUP_PREFIX)) return
     const gid = activeId.slice(GROUP_PREFIX.length)
+    setGcallMin(false)
     void gcall.start(gid, media)
     groupApi.sendGroupMessage(gid, media === 'video' ? 'Started a group video call. Open this chat to join.' : 'Started a group voice call. Open this chat to join.')
   }
@@ -370,9 +374,20 @@ function App() {
   const activeGroup = activeId?.startsWith(GROUP_PREFIX) ? groupApi.groups.find((g) => g.id === activeId.slice(GROUP_PREFIX.length)) ?? null : null
   const settingsGroup = groupSettingsId ? groupApi.groups.find((g) => g.id === groupSettingsId) ?? null : null
 
+  // a finished call must never leave a stale "minimized" flag for the next one
+  useEffect(() => {
+    if (call.state === 'idle') setCallMin(false)
+  }, [call.state])
+  useEffect(() => {
+    if (!gcall.active) setGcallMin(false)
+  }, [gcall.active])
+
   // Back button: close the top-most sheet first, then leave the chat, and only then offer to exit
   useBackHandler(() => {
-    if (gcall.active) return true
+    // a live call is minimized by Back (never trapped); once minimized, Back works on the screen underneath
+    if (gcall.active && !gcallMin) { setGcallMin(true); return true }
+    if (call.state === 'ringing' || call.incoming) return true
+    if ((call.state === 'calling' || call.state === 'connecting' || call.state === 'connected') && !callMin) { setCallMin(true); return true }
     if (viewStory) { setViewStory(null); return true }
     if (composerOpen) { setComposerOpen(false); return true }
     if (groupSettingsId) { setGroupSettingsId(null); return true }
@@ -542,7 +557,10 @@ function App() {
           error={gcall.error}
           onAccept={() => void gcall.acceptInvite()}
           onDecline={gcall.decline}
-          onLeave={gcall.leave}
+          onLeave={() => { setGcallMin(false); gcall.leave() }}
+          minimized={gcallMin}
+          onMinimize={() => setGcallMin(true)}
+          onRestore={() => setGcallMin(false)}
           onToggleMute={gcall.toggleMute}
           onToggleCam={gcall.toggleCam}
         />
@@ -563,6 +581,15 @@ function App() {
           onToggleMute={call.toggleMute}
           onToggleCam={call.toggleCam}
           onDismissError={call.dismissError}
+          onFlipCamera={call.flipCamera}
+          connectedAt={call.connectedAt}
+          minimized={callMin}
+          onMinimize={() => setCallMin(true)}
+          onRestore={() => setCallMin(false)}
+          onOpenChat={() => {
+            if (call.peerId) openChat(REAL_PREFIX + call.peerId)
+            setCallMin(true)
+          }}
         />
 
         <div className={`${activeChat ? 'flex' : 'hidden md:flex'} h-full min-w-0 flex-1`}>
