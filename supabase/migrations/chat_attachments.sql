@@ -1,5 +1,5 @@
--- Files and voice messages in chats (up to 1 MB each). NOT APPLIED YET: run it in the Supabase SQL Editor.
--- Until then, sending a file or voice message in a real chat shows
+-- Files and voice messages in chats (up to 1 MB each). APPLIED to the project on 17 Oct 2026 (SQL Editor) and checked.
+-- Before it, sending a file or voice message in a real chat showed
 -- "File sharing isn't switched on for this server yet". Decoy chats don't use this at all.
 --
 -- Layout (checked by the rules below):

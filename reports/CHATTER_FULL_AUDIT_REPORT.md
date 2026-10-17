@@ -369,10 +369,13 @@ Plus: `tsc` 7 and `eslint` 23 (unchanged pre-existing issues), `vite build` pass
 ### Files
 New: `messageMeta.ts`, `chatRules.ts`, `expiry.ts`, `components/MessageControls.tsx`, `storyMaker.ts`, `storyFormat.ts`, `storyDrafts.ts`, `components/StoryMaker.tsx`, `supabase/migrations/message_controls_and_stories.sql` (**not applied**). Changed: `ChatWindow.tsx`, `EditSheets.tsx`, `ChatList.tsx`, `FileMessage.tsx`, `VoiceMessage.tsx`, `Stories.tsx`, `social.ts`, `realChats.ts`, `App.tsx`, `Settings.tsx`, `prefs.ts`, `data.ts`, `attachmentFormat.ts`, `vite-env.d.ts`, `package.json` (adds `gifenc`).
 
-### Database update (`message_controls_and_stories.sql`, not applied: needs your approval)
-Adds `expires_at` to messages and group messages with a restrictive policy so expired messages are never returned, a trigger so the expiry can't be pushed later, and a purge job every 10 minutes (pg_cron). Adds story `audience`, `audience_ids` and `media_key`, with new read/react rules that honour the audience. Adds `story_replies` (public/private rules enforced by row-level security; "reply with my story" must link the replier's own story, checked by a trigger). Adds a private `story-media` bucket (8 MB; the app limits photos/GIFs to 2 MB and music to 4 MB). All 50 statements parse with PostgreSQL's own parser (`pglast`); **none has been run against a database.**
+### Database updates (applied by you in the Supabase SQL Editor on 17 October 2026)
+Both `chat_attachments.sql` (private chat files, 1 MB) and `message_controls_and_stories.sql` below were applied to the live project. **Checked afterwards with read-only queries:** both buckets exist and are private (1 MB and 8 MB); every new column, policy, trigger and constraint is present; row-level security is on for `story_replies`; the cleanup job `chatter-purge-expired` is scheduled every 10 minutes; `anon` and `authenticated` cannot run the cleanup function or (for anonymous users) the block-lookup function. **Not yet done: a real two-account test on phones** (audience rules, private vs public replies, expiry deletion, file access between two people). Before applying, a bug in this SQL was found and fixed in review: a story's attached song could not be opened by viewers (now `music_key`), and stories could point at other people's files (now constrained to the author's own folder).
 
-### Until the database update is applied (tested)
+#### What the update contains (`message_controls_and_stories.sql`)
+Adds `expires_at` to messages and group messages with a restrictive policy so expired messages are never returned, a trigger so the expiry can't be pushed later, and a purge job every 10 minutes (pg_cron). Adds story `audience`, `audience_ids` and `media_key`, with new read/react rules that honour the audience. Adds `story_replies` (public/private rules enforced by row-level security; "reply with my story" must link the replier's own story, checked by a trigger). Adds a private `story-media` bucket (8 MB; the app limits photos/GIFs to 2 MB and music to 4 MB). All 50 statements parse with PostgreSQL's own parser (`pglast`); it was then applied (see above).
+
+### If the database update is missing (tested; no longer the case on the live project)
 - Disappearing messages are hidden by the apps but stay in the database.
 - Text and emoji **private** story replies are sent as a direct message to the story's author.
 - Photo/GIF/video/music stories, audiences and public replies show "needs the stories database update", and the maker stays open with the work kept (so you can still Save draft or Save to device).
@@ -391,7 +394,7 @@ Adds `expires_at` to messages and group messages with a restrictive policy so ex
 3. **The stories grid loaded full video players** with controls for every card. Cards now show a quiet preview.
 
 ### Limitations (stated plainly)
-- **Not testable here without your approval:** the database update is not applied, so cross-device behaviour (audience rules, public vs private visibility enforced by the server, server-side deletion of expired messages) is **verified only in the browser with a stand-in server**, not against Supabase.
+- **Not tested on real accounts:** the database update is applied, but cross-device behaviour (audience rules, public vs private visibility enforced by the server, server-side deletion of expired messages) is **verified only in the browser with a stand-in server**, not against Supabase.
 - **Copy/forward/download blocks and disappearing messages are honoured by Chatter apps only.** Nothing stops screenshots, a second phone filming the screen, or an older app version that ignores the marker. This is why the controls say so. Disappearing messages are hidden by the apps and deleted by the server only after the update is applied.
 - **Block copying** prevents selecting and copying text in the app; it doesn't stop someone retyping it.
 - **The stories "everyone except / only / close friends" list is chosen by you per story; the person you exclude is not told.**

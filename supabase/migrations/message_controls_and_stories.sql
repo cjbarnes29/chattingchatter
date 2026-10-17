@@ -1,5 +1,5 @@
--- Message Control Center (server side) + Story Maker / stories panel. NOT APPLIED YET: run it in the Supabase SQL Editor.
--- Until then:
+-- Message Control Center (server side) + Story Maker / stories panel. APPLIED to the project on 17 Oct 2026 (SQL Editor) and checked.
+-- Before it:
 --   * disappearing messages are hidden by the apps but stay in the database,
 --   * photo/GIF stories, custom story audiences and public story replies show
 --     "needs the stories database update"; private text replies are sent as direct messages.
