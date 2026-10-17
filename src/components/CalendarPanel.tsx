@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Bell, BellRing, CalendarDays, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react'
-import { REMIND_OPTIONS, fmtWhen, remindLabel, ensureNotifyPermission, type CalEvent } from '../calendar'
+import { REMIND_OPTIONS, fmtWhen, remindLabel, ensureNotifyPermission, useNotifyPermission, type CalEvent } from '../calendar'
+import { isNative } from '../native'
 import { readCalPrefs } from '../prefs'
 
 type Props = {
@@ -29,7 +30,7 @@ export default function CalendarPanel({ friend, myId, events, onAdd, onDelete, o
   const [remind, setRemind] = useState(() => readCalPrefs().defaultRemind)
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState<string | null>(null)
-  const [perm, setPerm] = useState<string>(() => ('Notification' in window ? Notification.permission : 'unsupported'))
+  const [perm, setPerm] = useNotifyPermission()
 
   const byDay = useMemo(() => {
     const m: Record<string, CalEvent[]> = {}
@@ -134,7 +135,7 @@ export default function CalendarPanel({ friend, myId, events, onAdd, onDelete, o
 
       {perm !== 'granted' && (
         <button onClick={async () => setPerm(await ensureNotifyPermission())} className="mt-4 flex w-full items-center justify-center gap-2 rounded-xl py-2 text-xs font-semibold text-[rgb(var(--accent))] ring-1 ring-[rgb(var(--accent))]">
-          <Bell size={13} /> {perm === 'denied' ? 'Notifications are blocked in your browser settings' : perm === 'unsupported' ? 'Notifications are not supported here — in-app alarms still work' : 'Turn on notifications for alarms'}
+          <Bell size={13} /> {perm === 'denied' ? (isNative() ? 'Notifications are off. Tap to turn them on in phone settings' : 'Notifications are blocked in your browser settings') : perm === 'unsupported' ? 'Notifications are not supported here — in-app alarms still work' : 'Turn on notifications for alarms'}
         </button>
       )}
     </div>

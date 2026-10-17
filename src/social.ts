@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import { avatarFor } from './auth'
+import { ensureMedia } from './permissions'
 
 export const GROUP_PREFIX = 'g:'
 export const GROUP_COLORS = ['#E0573B', '#2F7A6B', '#3A5BA0', '#8A4FB8', '#C98A1B', '#B83D6E']
@@ -435,6 +436,7 @@ export function useCall(myId: string) {
   )
 
   const getMedia = useCallback(async (mediaType: CallMedia) => {
+    await ensureMedia(mediaType === 'video')
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: true,
       video: mediaType === 'video' ? { facingMode: 'user', width: { ideal: 1280 }, height: { ideal: 720 } } : false,
@@ -480,7 +482,7 @@ export function useCall(myId: string) {
       } catch (e) {
         setError(
           e instanceof DOMException && e.name === 'NotAllowedError'
-            ? 'Allow microphone/camera access in your browser to call.'
+            ? 'Allow microphone/camera access to call.'
             : 'Could not start the call. Check your microphone and camera.',
         )
         teardown()

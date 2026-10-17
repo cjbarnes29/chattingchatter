@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard } from 'lucide-react'
+import { X, LogOut, Camera, Moon, Sun, Lock, Bell, Eye, ShieldCheck, Check, ChevronRight, ArrowLeft, User, KeyRound, Palette, Hand, Ghost, EyeOff, Crown, LayoutDashboard, Smartphone } from 'lucide-react'
 import { useAuth } from '../auth'
 import { usePro } from '../pro'
 import ProSettings from './ProSettings'
@@ -7,6 +7,8 @@ import AccountSettings from './AccountSettings'
 import AppearanceSettings from './AppearanceSettings'
 import InterfaceSettings from './InterfaceSettings'
 import FeatureSettings from './FeatureSettings'
+import AppPermissions from './AppPermissions'
+import { isNative } from '../native'
 import { PinGate } from './PinGate'
 import { useNotifPrefs, usePrivacyPrefs } from '../prefs'
 import { biometricEnabled, setBiometricEnabled, biometricEnrolled, enrollBiometric, verifyBiometric } from '../biometric'
@@ -21,7 +23,7 @@ type Props = {
   decoy?: boolean
 }
 
-type Page = 'profile' | 'account' | 'appearance' | 'interface' | 'privacy' | 'notifications' | 'gestures' | 'ghost' | 'decoy' | 'pro'
+type Page = 'profile' | 'account' | 'appearance' | 'interface' | 'privacy' | 'notifications' | 'gestures' | 'ghost' | 'decoy' | 'pro' | 'permissions'
 
 function Toggle({ on, onChange, label }: { on: boolean; onChange: (v: boolean) => void; label: string }) {
   return (
@@ -133,6 +135,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
     { id: 'appearance', icon: dark ? <Moon size={16} /> : <Sun size={16} />, title: 'Appearance', desc: 'Text, colours, chat screen and animations' },
     { id: 'privacy', icon: <ShieldCheck size={16} />, title: 'Privacy & security', desc: 'Receipts, locks, PIN and decoy PIN', hideInDecoy: true },
     { id: 'notifications', icon: <Bell size={16} />, title: 'Notifications & sounds', desc: 'Previews, quick replies, sounds, alarms' },
+    ...(isNative() ? [{ id: 'permissions' as const, icon: <Smartphone size={16} />, title: 'App permissions', desc: 'Camera, microphone, notifications, fingerprint' }] : []),
     { id: 'gestures', icon: <Hand size={16} />, title: 'Chats & gestures', desc: 'Swipes, taps and shortcuts' },
     { id: 'ghost', icon: <Palette size={16} />, title: 'Ghost Canvas', desc: 'Ink, fade-out time and grid' },
     { id: 'decoy', icon: <EyeOff size={16} />, title: 'Decoy chats', desc: 'Edit what the decoy PIN shows', hideInDecoy: true },
@@ -311,6 +314,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
             </>
           )}
 
+          {page === 'permissions' && <AppPermissions />}
           {page === 'gestures' && <FeatureSettings section="gestures" />}
           {page === 'ghost' && (
             <>

@@ -1,11 +1,11 @@
-import { useState } from 'react'
 import { Bell, BellRing, Brush, CalendarDays, Camera, Check, Crown, Ghost, Plus, RotateCcw, Trash2 } from 'lucide-react'
 import { usePro } from '../pro'
 import { limit } from '../entitlements'
 import { useCalPrefs, useGhostPrefs, useGesturePrefs, INK_COLORS } from '../prefs'
 import { useDecoyItems, updateDecoy, removeDecoy, addDecoy, resetDecoys } from '../decoyStore'
 import { fileToAvatar } from '../edits'
-import { REMIND_OPTIONS, beep, ensureNotifyPermission } from '../calendar'
+import { REMIND_OPTIONS, beep, ensureNotifyPermission, useNotifyPermission } from '../calendar'
+import { isNative } from '../native'
 import { useChatStyle, setSoundOn } from '../chatStyle'
 import { SoundControls } from './ChatStyleSheet'
 
@@ -37,8 +37,8 @@ export type FeatureSection = 'gestures' | 'sounds' | 'decoy' | 'calendar' | 'gho
 export default function FeatureSettings({ section }: { section: FeatureSection }) {
   const [cal, setCal] = useCalPrefs()
   const [ghost, setGhost, resetGhost] = useGhostPrefs()
-  const [perm, setPerm] = useState<string>(() => ('Notification' in window ? Notification.permission : 'unsupported'))
-  const permText = perm === 'granted' ? 'On' : perm === 'denied' ? 'Blocked in browser' : perm === 'unsupported' ? 'Not supported here' : 'Off'
+  const [perm, setPerm] = useNotifyPermission()
+  const permText = perm === 'granted' ? 'On' : perm === 'denied' ? (isNative() ? 'Turned off in phone settings' : 'Blocked in browser') : perm === 'unsupported' ? 'Not supported here' : 'Off'
 
   const cs = useChatStyle()
   const [gest, setGest] = useGesturePrefs()
@@ -118,7 +118,7 @@ export default function FeatureSettings({ section }: { section: FeatureSection }
           {perm === 'granted' ? (
             <span className="flex items-center gap-1 text-xs font-semibold text-[rgb(var(--accent))]"><Check size={13} /> On</span>
           ) : (
-            <button disabled={perm === 'denied' || perm === 'unsupported'} onClick={async () => setPerm(await ensureNotifyPermission())} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--accent))] px-3 py-1.5 text-xs font-semibold text-[rgb(var(--accent-foreground))] disabled:opacity-50"><Bell size={13} /> Enable</button>
+            <button disabled={(perm === 'denied' && !isNative()) || perm === 'unsupported'} onClick={async () => setPerm(await ensureNotifyPermission())} className="flex items-center gap-1.5 rounded-full bg-[rgb(var(--accent))] px-3 py-1.5 text-xs font-semibold text-[rgb(var(--accent-foreground))] disabled:opacity-50"><Bell size={13} /> Enable</button>
           )}
         </Row>
         <Row title="Alarm sound" desc="Play a short chime when an event alarm goes off">

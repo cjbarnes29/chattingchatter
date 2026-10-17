@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client'
 import App from './App.tsx'
 import Landing from './components/Landing.tsx'
 import UpdatePrompt from './components/UpdatePrompt.tsx'
+import PermissionPrompt from './components/PermissionPrompt.tsx'
 import './index.css'
 import './appearance'
 
@@ -23,5 +24,6 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {showApp ? <App /> : <Landing />}
     <UpdatePrompt />
+    <PermissionPrompt />
   </StrictMode>,
 )
