@@ -7,6 +7,7 @@ import { useDecoyItems, updateDecoy } from '../decoyStore'
 import { validPin } from '../pinLock'
 import { FEATURES, STATUS_LABEL, limit } from '../entitlements'
 import MasterpieceViewer from './MasterpieceViewer'
+import { saveTextFile } from '../native'
 
 const DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
 const hourLabel = (h: number) => `${h % 12 === 0 ? 12 : h % 12}${h < 12 ? 'am' : 'pm'}`
@@ -113,12 +114,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const download = (m: Masterpiece) => {
     const text = pro.exportMasterpiece(m.id)
     if (!text) return
-    const url = URL.createObjectURL(new Blob([text], { type: 'application/json' }))
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `${m.name.replace(/[^\w· -]+/g, '').trim() || 'canvas'}.chatter-canvas.json`
-    a.click()
-    URL.revokeObjectURL(url)
+    saveTextFile(`${m.name.replace(/[^\w· -]+/g, '').trim() || 'canvas'}.chatter-canvas.json`, 'application/json', text).catch(() => {})
   }
   const importFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const f = e.target.files?.[0]

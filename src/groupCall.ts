@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import type { CallMedia, Group } from './social'
+import { ensureMedia } from './permissions'
 
 const RTC: RTCConfiguration = {
   iceServers: [{ urls: 'stun:stun.l.google.com:19302' }, { urls: 'stun:stun1.l.google.com:19302' }],
@@ -138,6 +139,7 @@ export function useGroupCall(myId: string, myName: string, groups: Group[]) {
       setInvite(null)
       let stream: MediaStream
       try {
+        await ensureMedia(media === 'video')
         stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: media === 'video' ? { facingMode: 'user' } : false })
       } catch {
         setError('Allow microphone and camera access to join the call.')

@@ -35,13 +35,23 @@
         </provider>
     </application>
 
-    <!-- Permissions -->
+    <!-- Permissions. Each one is used by a feature the user starts; nothing is requested at launch.
+         See docs/ANDROID.md for what each is for. -->
 
+    <!-- Install-time (no prompt) -->
     <uses-permission android:name="android.permission.INTERNET" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.CAMERA" />
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" /> <!-- speaker/earpiece during calls -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC" />         <!-- fingerprint/face unlock -->
+    <uses-permission android:name="android.permission.VIBRATE" />               <!-- haptic tap on long-press and swipe-to-reply -->
+
+    <!-- Asked at runtime, with an explanation first -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />          <!-- voice and video calls -->
+    <uses-permission android:name="android.permission.CAMERA" />                <!-- video calls, taking a photo to send -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />    <!-- event reminders (Android 13+) -->
+
+    <!-- No storage permission: files are picked and saved through the system file picker. -->
+
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.fingerprint" android:required="false" />
 </manifest>

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { supabase } from './supabase'
 import { readCalPrefs } from './prefs'
+import { Device, isNative } from './native'
+import { ensurePermission } from './permissions'
 
 export type CalEvent = {
   id: string
@@ -50,13 +52,47 @@ export function beep() {
   }
 }
 
-export async function ensureNotifyPermission(): Promise<NotificationPermission | 'unsupported'> {
+export type NotifyPerm = NotificationPermission | 'unsupported'
+
+export async function notifyPermission(): Promise<NotifyPerm> {
+  if (isNative()) {
+    try {
+      const st = (await Device.getStatus()).notifications
+      return st === 'granted' ? 'granted' : st === 'denied' ? 'denied' : 'default'
+    } catch {
+      return 'unsupported'
+    }
+  }
+  return 'Notification' in window ? Notification.permission : 'unsupported'
+}
+
+/** Notification permission state, refreshed when the user comes back from phone settings. */
+export function useNotifyPermission() {
+  const [perm, setPerm] = useState<NotifyPerm>(() => ('Notification' in window ? Notification.permission : isNative() ? 'default' : 'unsupported'))
+  useEffect(() => {
+    const load = () => document.visibilityState === 'visible' && notifyPermission().then(setPerm)
+    load()
+    document.addEventListener('visibilitychange', load)
+    return () => document.removeEventListener('visibilitychange', load)
+  }, [])
+  return [perm, setPerm] as const
+}
+
+export async function ensureNotifyPermission(): Promise<NotifyPerm> {
+  if (isNative()) {
+    await ensurePermission('notifications')
+    return notifyPermission()
+  }
   if (!('Notification' in window)) return 'unsupported'
   if (Notification.permission === 'default') return Notification.requestPermission()
   return Notification.permission
 }
 
 async function systemNotify(title: string, body: string, tag: string) {
+  if (isNative()) {
+    await Device.showNotification({ id: tag, title, body }).catch(() => {})
+    return
+  }
   if (!('Notification' in window) || Notification.permission !== 'granted') return
   try {
     const reg = await navigator.serviceWorker?.getRegistration()

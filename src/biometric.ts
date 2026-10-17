@@ -1,7 +1,12 @@
 /** Face ID / Touch ID / fingerprint check using the device's built-in authenticator (WebAuthn).
  *  The phone does the check; Chatter never sees or stores fingerprint or face data. The result is used
  *  on this device only (it unlocks the app lock), so it is as strong as the device's own screen lock. */
+import { Device, isNative } from './native'
+
 const CRED = 'chatter.bio.cred'
+/** On Android the app uses the phone's BiometricPrompt (strong fingerprint/face only); there is no
+ *  WebAuthn credential to store, so this marker stands in for one. */
+const NATIVE_CRED = 'android-biometric-prompt'
 const ON = 'chatter.bio.on'
 
 const b64 = (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf)))
@@ -18,6 +23,7 @@ export const bioUnlockEnabled = () => localStorage.getItem(UNLOCK) === '1'
 export const setBioUnlockEnabled = (v: boolean) => localStorage.setItem(UNLOCK, v ? '1' : '0')
 
 export async function biometricSupported(): Promise<boolean> {
+  if (isNative()) return Device.getStatus().then((s) => s.biometric === 'available').catch(() => false)
   try {
     if (!window.PublicKeyCredential || !window.isSecureContext) return false
     return await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()
@@ -34,7 +40,26 @@ function explain(e: unknown): string {
   return 'Biometric check failed. Use your PIN instead.'
 }
 
+async function nativeVerify(title: string): Promise<{ ok: boolean; error?: string; denied?: boolean }> {
+  try {
+    const r = await Device.verifyBiometric({ title, subtitle: 'Use your fingerprint or face' })
+    if (r.ok) return { ok: true }
+    if (r.code === 'not-enrolled') return { ok: false, error: 'No fingerprint or face is set up. Add one in phone settings → Security.' }
+    if (r.code === 'unavailable') return { ok: false, error: 'This phone has no strong fingerprint or face unlock.' }
+    if (r.code === 'lockout') return { ok: false, error: 'Too many tries. Use your PIN, or unlock your phone first and try again.', denied: true }
+    if (r.code === 'cancelled') return { ok: false, error: 'Cancelled. Use your PIN instead.', denied: true }
+    return { ok: false, error: r.message || 'Biometric check failed. Use your PIN instead.', denied: true }
+  } catch {
+    return { ok: false, error: 'Biometric check failed. Use your PIN instead.' }
+  }
+}
+
 export async function enrollBiometric(userId: string, name: string): Promise<{ ok: boolean; error?: string }> {
+  if (isNative()) {
+    const r = await nativeVerify('Turn on fingerprint unlock')
+    if (r.ok) localStorage.setItem(CRED, NATIVE_CRED)
+    return r
+  }
   if (!(await biometricSupported())) return { ok: false, error: 'No Face ID, Touch ID or fingerprint sensor is available here.' }
   try {
     const cred = (await navigator.credentials.create({
@@ -58,6 +83,8 @@ export async function enrollBiometric(userId: string, name: string): Promise<{ o
 export async function verifyBiometric(): Promise<{ ok: boolean; error?: string; denied?: boolean }> {
   const id = localStorage.getItem(CRED)
   if (!id) return { ok: false, error: 'not-enrolled' }
+  if (isNative()) return nativeVerify('Unlock Chatter')
+  if (id === NATIVE_CRED) return { ok: false, error: 'not-enrolled' }
   try {
     const r = await navigator.credentials.get({
       publicKey: {
