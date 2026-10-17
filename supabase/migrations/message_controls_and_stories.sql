@@ -1,5 +1,5 @@
--- Message Control Center (server side) + Story Maker / stories panel. NOT APPLIED YET.
--- Review, then run it in the Supabase SQL Editor. Until then:
+-- Message Control Center (server side) + Story Maker / stories panel. NOT APPLIED YET: run it in the Supabase SQL Editor.
+-- Until then:
 --   * disappearing messages are hidden by the apps but stay in the database,
 --   * photo/GIF stories, custom story audiences and public story replies show
 --     "needs the stories database update"; private text replies are sent as direct messages.
@@ -36,7 +36,7 @@ create or replace function public.purge_expired() returns void language sql secu
   delete from public.group_messages where expires_at is not null and expires_at < now();
   delete from public.stories where visible_until < now() - interval '1 day';
 $$;
-revoke all on function public.purge_expired() from anon, authenticated;
+revoke all on function public.purge_expired() from public, anon, authenticated;
 
 -- run it every 10 minutes (pg_cron is available on this project but not switched on yet)
 create extension if not exists pg_cron;
@@ -119,7 +119,11 @@ drop policy if exists "delete own or received replies" on public.story_replies;
 create policy "delete own or received replies" on public.story_replies for delete to authenticated using (
   author_id = auth.uid() or exists (select 1 from public.stories s where s.id = story_id and s.author_id = auth.uid()));
 
-alter publication supabase_realtime add table public.story_replies;
+do $$ begin
+  if not exists (select 1 from pg_publication_tables where pubname = 'supabase_realtime' and schemaname = 'public' and tablename = 'story_replies') then
+    alter publication supabase_realtime add table public.story_replies;
+  end if;
+end $$;
 
 -- ---------- 4. Private storage for story photos, GIFs, videos, music and reply media (up to 8 MB; the app limits photos/GIFs to 2 MB, music to 4 MB) ----------
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)

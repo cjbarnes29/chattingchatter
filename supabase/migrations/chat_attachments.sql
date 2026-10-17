@@ -1,5 +1,5 @@
--- Files and voice messages in chats (up to 1 MB each). NOT APPLIED YET: run it in the Supabase SQL Editor
--- once you've reviewed it. Until then, sending a file or voice message in a real chat shows
+-- Files and voice messages in chats (up to 1 MB each). NOT APPLIED YET: run it in the Supabase SQL Editor.
+-- Until then, sending a file or voice message in a real chat shows
 -- "File sharing isn't switched on for this server yet". Decoy chats don't use this at all.
 --
 -- Layout (checked by the rules below):
@@ -20,7 +20,8 @@ $$;
 -- true if either person has blocked the other
 create or replace function public.attachment_blocked(a uuid, b uuid)
 returns boolean language sql security definer stable set search_path = public as $$
-  select exists (select 1 from public.blocks where (blocker_id = a and blocked_id = b) or (blocker_id = b and blocked_id = a));
+  -- only answers for the person asking (a must be the caller), so it can't be used to look up other people's blocks
+  select a = auth.uid() and exists (select 1 from public.blocks where (blocker_id = a and blocked_id = b) or (blocker_id = b and blocked_id = a));
 $$;
 
 drop policy if exists "attachments: send" on storage.objects;
@@ -64,4 +65,5 @@ using (
   )
 );
 
-revoke all on function public.attachment_blocked(uuid, uuid) from anon;
+revoke all on function public.attachment_blocked(uuid, uuid) from public, anon;
+grant execute on function public.attachment_blocked(uuid, uuid) to authenticated;
