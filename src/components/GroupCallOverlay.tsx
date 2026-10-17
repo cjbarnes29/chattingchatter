@@ -42,7 +42,7 @@ function Tile({ name, avatar, stream, video, mute, mirror, you }: { name: string
 export default function GroupCallOverlay(p: Props) {
   if (p.invite && !p.active) {
     return (
-      <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-[rgb(var(--bg-app))]/95 p-6 text-center">
+      <div className="fixed inset-0 z-[60] safe-overlay flex flex-col items-center justify-center gap-6 bg-[rgb(var(--bg-app))]/95 p-6 text-center">
         <span className="flex h-24 w-24 items-center justify-center rounded-full bg-[rgb(var(--accent-soft))] text-[rgb(var(--accent))] ring-4 ring-[rgb(var(--accent))]/40"><Users size={38} /></span>
         <div>
           <p className="text-xl font-bold">{p.invite.groupName}</p>
@@ -62,7 +62,7 @@ export default function GroupCallOverlay(p: Props) {
   const ids = Object.keys(p.streams)
   const nameOf = (id: string) => p.group?.members.find((m) => m.id === id)
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-[#0E0C10] text-white">
+    <div className="fixed inset-0 z-[60] safe-overlay flex flex-col bg-[#0E0C10] text-white">
       <header className="p-4 text-center">
         <p className="font-semibold">{p.group?.name ?? 'Group call'}</p>
         <p className="text-sm text-white/70">{ids.length === 0 ? 'Waiting for others to join…' : `${ids.length + 1} in the call`}</p>

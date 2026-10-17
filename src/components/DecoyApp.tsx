@@ -63,7 +63,7 @@ export default function DecoyApp() {
   if (!user) return null
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[rgb(var(--bg-app))] md:p-4">
+    <div className="safe-shell flex w-full overflow-hidden bg-[rgb(var(--bg-app))]">
       <div className="mx-auto flex h-full w-full flex-row-reverse overflow-hidden bg-[rgb(var(--bg-panel))] md:max-w-[1400px] md:rounded-2xl md:shadow-xl md:ring-1 md:ring-[rgb(var(--border))]">
         <div className={`${activeChat ? 'hidden md:flex' : 'flex'} h-full w-full md:w-auto`}>
           <ChatList

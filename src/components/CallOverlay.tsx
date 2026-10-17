@@ -54,7 +54,7 @@ export default function CallOverlay(p: Props) {
   // Incoming ring screen
   if (p.incoming || p.state === 'ringing') {
     return (
-      <div className="fixed inset-0 z-[60] flex flex-col items-center justify-center gap-6 bg-[rgb(var(--bg-app))]/95 p-6 text-center backdrop-blur-sm">
+      <div className="fixed inset-0 z-[60] safe-overlay flex flex-col items-center justify-center gap-6 bg-[rgb(var(--bg-app))]/95 p-6 text-center backdrop-blur-sm">
         <img src={p.peerAvatar} alt="" className="h-28 w-28 rounded-full object-cover ring-4 ring-[rgb(var(--accent))]/40" />
         <div>
           <p className="text-xl font-bold">{p.peerName}</p>
@@ -73,7 +73,7 @@ export default function CallOverlay(p: Props) {
   }
 
   return (
-    <div className="fixed inset-0 z-[60] flex flex-col bg-[#0E0C10] text-white">
+    <div className="fixed inset-0 z-[60] safe-overlay flex flex-col bg-[#0E0C10] text-white">
       <AudioEl stream={p.remoteStream} />
       <div className="relative flex-1 overflow-hidden">
         {isVideo && p.remoteStream ? (

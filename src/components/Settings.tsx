@@ -192,7 +192,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
   const current = MENU.find((m) => m.id === page)
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 md:items-center md:p-6" onClick={close}>
+    <div className="fixed inset-0 z-50 safe-overlay flex items-stretch justify-center bg-black/40 md:items-center md:p-6" onClick={close}>
       {/* these sit on top of the settings backdrop, so clicks inside them must not reach its "tap outside to close" */}
       <div onClick={(e) => e.stopPropagation()}>
         {confirmOut && (

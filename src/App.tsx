@@ -136,7 +136,7 @@ function Gate() {
     <>
       {body}
       {unlocked === 'real' && intrusions.length > 0 && (
-        <div role="alert" className="fixed inset-x-3 top-3 z-[80] mx-auto flex max-w-md items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel))] p-4 shadow-2xl ring-2 ring-rose-500">
+        <div role="alert" className="fixed inset-x-3 top-[calc(var(--sat)+0.75rem)] z-[80] mx-auto flex max-w-md items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel))] p-4 shadow-2xl ring-2 ring-rose-500">
           <ShieldAlert size={20} className="mt-0.5 shrink-0 text-rose-500" />
           <div className="min-w-0 flex-1 text-sm">
             <p className="font-bold">{intrusions.length} wrong PIN{intrusions.length === 1 ? ' was' : 's were'} tried</p>
@@ -390,14 +390,14 @@ function App() {
   const noticeChat = notice ? chats.find((c) => c.id === notice.chatId) : null
 
   return (
-    <div className="flex h-screen w-full overflow-hidden bg-[rgb(var(--bg-app))] md:p-4">
+    <div className="safe-shell flex w-full overflow-hidden bg-[rgb(var(--bg-app))]">
       {inFocus && (
-        <div className="pointer-events-none fixed left-1/2 top-3 z-40 -translate-x-1/2 rounded-full bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs font-semibold shadow-lg ring-1 ring-[rgb(var(--accent))]">
+        <div className="pointer-events-none fixed left-1/2 top-[calc(var(--sat)+0.75rem)] z-40 -translate-x-1/2 rounded-full bg-[rgb(var(--bg-panel))] px-4 py-2 text-xs font-semibold shadow-lg ring-1 ring-[rgb(var(--accent))]">
           Focus mode on{bundled ? ` · ${bundled} notification${bundled > 1 ? 's' : ''} bundled` : ''}
         </div>
       )}
       {evApi.alarms.length > 0 && (
-        <div className="fixed right-3 top-3 z-[60] flex w-[min(92vw,22rem)] flex-col gap-2" role="alert" aria-live="assertive">
+        <div className="fixed right-3 top-[calc(var(--sat)+0.75rem)] z-[60] flex w-[min(92vw,22rem)] flex-col gap-2" role="alert" aria-live="assertive">
           {evApi.alarms.map((a) => (
             <div key={a.id} className="flex items-start gap-3 rounded-2xl bg-[rgb(var(--bg-panel))] p-3.5 shadow-2xl ring-2 ring-[rgb(var(--accent))]">
               <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))]"><BellRing size={16} /></span>

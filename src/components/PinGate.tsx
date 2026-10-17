@@ -79,7 +79,7 @@ export function PinGate({ onUnlock, onDecoy, title = 'Enter your PIN', subtitle 
 
   return (
     <div
-      className="fixed inset-0 z-[70] flex flex-col items-center justify-center gap-6 bg-[#0B1210] p-6 text-white"
+      className="fixed inset-0 z-[70] safe-overlay flex flex-col items-center justify-center gap-6 bg-[#0B1210] p-6 text-white"
       style={bioUnlock ? { touchAction: 'none' } : undefined}
       onPointerDown={(e) => { startY.current = e.clientY }}
       onPointerUp={(e) => {

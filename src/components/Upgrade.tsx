@@ -17,7 +17,7 @@ export default function Upgrade({ onClose }: { onClose: () => void }) {
   const [choice, setChoice] = useState<Billing>(billing)
 
   return (
-    <div className="fixed inset-0 z-[60] flex items-stretch justify-center bg-black/50 backdrop-blur-[2px] md:items-center md:p-6" onClick={onClose}>
+    <div className="fixed inset-0 z-[60] safe-overlay flex items-stretch justify-center bg-black/50 backdrop-blur-[2px] md:items-center md:p-6" onClick={onClose}>
       <div role="dialog" aria-label="Chatter Pro" onClick={(e) => e.stopPropagation()} className="flex h-full w-full max-w-3xl flex-col overflow-hidden bg-[rgb(var(--bg-panel))] shadow-2xl md:h-auto md:max-h-[92vh] md:rounded-3xl md:ring-1 md:ring-[rgb(var(--border))]">
         <header className="relative overflow-hidden bg-gradient-to-br from-[#0B1210] via-[#13261F] to-[#1B3A2E] px-6 pb-7 pt-6 text-white">
           <div className="pointer-events-none absolute -right-16 -top-16 h-56 w-56 rounded-full bg-[#7CF5C0]/20 blur-3xl" />

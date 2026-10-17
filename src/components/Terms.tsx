@@ -81,7 +81,7 @@ const sections: { title: string; body: string[] }[] = [
 /** Full-screen Terms and Conditions page. `onBack` returns to the previous screen. */
 export default function Terms({ onBack }: { onBack: () => void }) {
   return (
-    <div className="min-h-screen w-full overflow-y-auto bg-[rgb(var(--bg-app))] text-[rgb(var(--text-primary))]">
+    <div className="min-h-screen safe-overlay w-full overflow-y-auto bg-[rgb(var(--bg-app))] text-[rgb(var(--text-primary))]">
       <div className="mx-auto max-w-2xl px-5 py-8 sm:py-12">
         <button
           onClick={onBack}
