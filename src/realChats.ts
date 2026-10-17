@@ -6,6 +6,7 @@ import type { Chat, Message } from './data'
 import { readPrivacyPrefs } from './prefs'
 
 type Row = { id: string; sender_id: string; recipient_id: string; body: string; created_at: string; read_at: string | null }
+type OutItem = { id: string; peerId: string; body: string }
 type Peer = {
   id: string
   name: string
@@ -170,15 +171,60 @@ export function useRealChats(myId: string) {
       .sort((a, b) => (b as { _t: string })._t.localeCompare((a as { _t: string })._t))
   }, [rows, peers, myId, openPeer])
 
+  // Messages typed while offline wait in a small outbox on this device and are sent when the connection returns.
+  // Sending twice is harmless: the message id is the primary key, so a repeat comes back as "already exists".
+  const outboxKey = `chatter.outbox.${myId}`
+  const readOutbox = useCallback((): OutItem[] => {
+    try { return JSON.parse(localStorage.getItem(outboxKey) ?? '[]') as OutItem[] } catch { return [] }
+  }, [outboxKey])
+  const writeOutbox = useCallback((items: OutItem[]) => {
+    try { localStorage.setItem(outboxKey, JSON.stringify(items.slice(-100))) } catch { /* storage full: keep going without it */ }
+  }, [outboxKey])
+
+  const deliver = useCallback(async (it: OutItem): Promise<'ok' | 'retry' | 'fail'> => {
+    const { error } = await supabase.from('messages').insert({ id: it.id, recipient_id: it.peerId, body: it.body })
+    if (!error || error.code === '23505') return 'ok'
+    // no HTTP status code = the request never reached the server (offline, dropped connection)
+    return !navigator.onLine || !error.code ? 'retry' : 'fail'
+  }, [])
+
+  const flushOutbox = useCallback(async () => {
+    const queue = readOutbox()
+    if (!queue.length) return
+    const left: OutItem[] = []
+    for (const it of queue) {
+      const r = left.length ? 'retry' : await deliver(it) // keep the order: stop at the first one that can't go
+      if (r === 'retry') left.push(it)
+      else if (r === 'fail') setRows((prev) => prev.filter((x) => x.id !== it.id))
+    }
+    writeOutbox(left)
+  }, [readOutbox, writeOutbox, deliver])
+
+  useEffect(() => {
+    void flushOutbox()
+    const t = window.setInterval(() => void flushOutbox(), 20000)
+    window.addEventListener('online', flushOutbox)
+    return () => {
+      window.clearInterval(t)
+      window.removeEventListener('online', flushOutbox)
+    }
+  }, [flushOutbox])
+
   const send = useCallback(
     async (chatId: string, text: string) => {
       const peerId = chatId.slice(REAL_PREFIX.length)
-      const id = crypto.randomUUID()
-      addRow({ id, sender_id: myId, recipient_id: peerId, body: text, created_at: new Date().toISOString(), read_at: null })
-      const { error } = await supabase.from('messages').insert({ id, recipient_id: peerId, body: text })
-      if (error) setRows((prev) => prev.filter((r) => r.id !== id))
+      const item: OutItem = { id: crypto.randomUUID(), peerId, body: text }
+      addRow({ id: item.id, sender_id: myId, recipient_id: peerId, body: text, created_at: new Date().toISOString(), read_at: null })
+      // behind anything already waiting, so messages arrive in the order they were written
+      if (readOutbox().length) {
+        writeOutbox([...readOutbox(), item])
+        return void flushOutbox()
+      }
+      const r = await deliver(item)
+      if (r === 'retry') writeOutbox([item])
+      else if (r === 'fail') setRows((prev) => prev.filter((x) => x.id !== item.id))
     },
-    [addRow, myId],
+    [addRow, myId, readOutbox, writeOutbox, flushOutbox, deliver],
   )
 
   /** Starts a chat with a friend, found by their email or their ID# */
