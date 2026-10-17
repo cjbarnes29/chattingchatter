@@ -17,8 +17,9 @@ export type FocusSchedule = {
   allowFavorites: boolean
 }
 
-/** Seconds the app may sit in the background before it locks again. */
-export type AutoLock = 0 | 60 | 300
+/** Seconds the app may sit in the background before it locks again; -1 = only when Chatter is closed
+ *  (the lock always comes back when the app is started again). */
+export type AutoLock = 0 | 30 | 60 | 300 | 900 | -1
 
 type ProData = {
   plan: Plan

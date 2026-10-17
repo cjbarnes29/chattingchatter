@@ -9,6 +9,7 @@ import InterfaceSettings from './InterfaceSettings'
 import FeatureSettings from './FeatureSettings'
 import AppPermissions from './AppPermissions'
 import DecoyManager from './DecoyManager'
+import SignInSettings from './SignInSettings'
 import { isNative } from '../native'
 import { PinGate } from './PinGate'
 import { useNotifPrefs, usePrivacyPrefs } from '../prefs'
@@ -298,6 +299,8 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
               </div>
               <SubTitle>App lock & decoy mode</SubTitle>
               <ProSettings only="pin" onUpgrade={onUpgrade} />
+              <SubTitle>Sign-in</SubTitle>
+              <SignInSettings />
             </>
           )}
 

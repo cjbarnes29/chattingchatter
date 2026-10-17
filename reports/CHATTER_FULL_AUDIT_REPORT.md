@@ -309,3 +309,34 @@ Plus: `tsc` 7 and `eslint` 23 (unchanged pre-existing issues), `vite build` pass
 - **This lock lives on the device, as before.** Someone with full access to the phone's storage could still try offline guesses against the PIN hash, which is slow by design. Your real messages remain protected by your account sign-in on the server.
 - **Shared app-wide settings:** in decoy mode, theme and interface changes (Settings → Interface/Appearance) apply to the whole app, including the real account's synced interface preferences. They contain no messages or contacts.
 - **Not tested on a real phone.** Android's fingerprint prompt goes through the native plugin, which was tested earlier only with a stand-in.
+
+---
+
+## 9. Part C: lock timing and sign-in options
+
+### What was asked
+Let the user choose when Chatter locks after leaving it, including "only when the app is closed". Optionally save the password to Google and sign in automatically.
+
+### What changed
+| File | Change |
+|---|---|
+| `src/pro.tsx`, `src/App.tsx`, `src/components/ProSettings.tsx`, `src/entitlements.ts` | **When Chatter locks:** Immediately, after 30 seconds, 1 minute, 5 minutes or 15 minutes in the background, or **Only when Chatter is closed**. Opening the app again always asks for the PIN, and decoy mode still locks as soon as it's left, whatever the choice. |
+| `src/signinPrefs.ts` (new), `src/components/SignInSettings.tsx` (new), `src/components/Settings.tsx` | **Settings → Privacy & security → Sign-in:**<br>• A note that you stay signed in after closing Chatter (that's how Supabase sessions already work).<br>• **Save password to Google** (off by default).<br>• **Sign in automatically** (off by default; needs saving on). |
+| `src/components/AuthScreen.tsx` | A "Save my password to Google Password Manager" box on the sign-in form. After a **successful** sign-in, the password is handed to the browser's password manager, which asks the user to confirm. With auto sign-in on, a saved password signs in by itself. The fields carry `username` / `current-password` hints so password managers and Android Autofill recognise them. |
+| `src/auth.tsx` | Logging out tells the browser not to sign back in silently; it asks first next time. |
+
+**How it's stored:** the password is kept by Chrome/Google Password Manager, **never by Chatter** (tested: it isn't in the app's storage). The PIN lock still applies after an automatic sign-in.
+
+### Test results: 33 / 33 pass
+Real app gate, sign-in screen and settings in Chromium, with a fake clock and stand-ins for Chrome's password manager API.
+- **Lock timing:** Immediately locks on leaving. At 30 s, 20 s away stays open and 31 s locks. At 15 min, 14 min stays open and 15 min locks. "Only when closed": 3 hours in the background stays open, and reopening locks. Decoy mode still locks on leaving. All six options are shown, the choice is saved and shown as selected. No page errors.
+- **Save password:** the box is off by default, and nothing is saved when it's off. A wrong password is never saved. A successful sign-in hands the password to the password manager, and Chatter itself doesn't store it. The fields are marked for password managers.
+- **Auto sign-in:** it signs in with the saved password. When it's off, nothing is read and nothing happens. Log out blocks silent re-sign-in.
+- **Settings:** auto sign-in needs saving first; turning saving off also turns auto sign-in off. Without a password manager (the Android web view), it explains Android Autofill and auto sign-in stays off.
+
+Plus: `tsc` 7 and `eslint` 23 (unchanged pre-existing issues), `vite build` passes, unit tests 15/15.
+
+### Limitations
+- **The Android app can't use Google Password Manager directly.** Its web view has no password-manager API, so "Sign in automatically" isn't available there. Android's own Autofill (Google) can offer to save and fill the password on the sign-in form, if Autofill is on in phone settings. That depends on the phone and wasn't tested here.
+- Auto sign-in in Chrome needs the user to be signed in to Chrome with password saving on.
+- Not tested on a real phone.

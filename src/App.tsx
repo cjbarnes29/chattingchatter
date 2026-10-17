@@ -79,7 +79,7 @@ function Gate() {
         // decoy mode always locks straight away, so a mistyped PIN is fixed by just leaving and coming back
         if (autoLock === 0 || unlockedRef.current === 'decoy') setUnlocked('none')
         forgetOpenedChats()
-      } else if (hiddenAt && Date.now() - hiddenAt >= autoLock * 1000) {
+      } else if (hiddenAt && autoLock >= 0 && Date.now() - hiddenAt >= autoLock * 1000) {
         setUnlocked('none')
       }
     }

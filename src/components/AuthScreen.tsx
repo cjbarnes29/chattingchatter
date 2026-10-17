@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { MessageCircle, Mail, User as UserIcon, Lock, Loader2, MailCheck, KeyRound } from 'lucide-react'
 import { useAuth } from '../auth'
 import InstallButton from './InstallButton'
 import ResetPassword from './ResetPassword'
 import Terms from './Terms'
+import { passwordManagerSupported, readSignin, savedPassword, setSignin, storePassword } from '../signinPrefs'
 
 const field =
   'flex items-center gap-2 rounded-xl bg-[rgb(var(--bg-panel-soft))] px-3.5 py-3 ring-1 ring-transparent focus-within:ring-[rgb(var(--accent))]'
@@ -42,6 +43,25 @@ export default function AuthScreen() {
   const [notice, setNotice] = useState<string | null>(null)
   const [agreed, setAgreed] = useState(false)
   const [showTerms, setShowTerms] = useState(false)
+  const [savePw, setSavePw] = useState(() => readSignin().save)
+
+  // Auto sign-in with the password saved in the browser's password manager (if the user turned it on)
+  useEffect(() => {
+    let off = false
+    void savedPassword().then(async (c) => {
+      if (!c || off) return
+      setEmail(c.email)
+      setBusy(true)
+      setNotice('Signing in with your saved password…')
+      const res = await signIn(c.email, c.password)
+      if (off) return
+      setBusy(false)
+      setNotice(null)
+      if (!res.ok) setError('Your saved password didn’t work. Sign in again to update it.')
+    })
+    return () => { off = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -53,6 +73,7 @@ export default function AuthScreen() {
     setBusy(true)
     const res = mode === 'login' ? await signIn(email, password) : await signUp(email, password, name)
     setBusy(false)
+    if (res.ok && !res.needsConfirm && mode === 'login') void storePassword(email.trim().toLowerCase(), password)
     if (!res.ok) {
       setError(res.error)
       // signing in to an unconfirmed account: jump straight to the code screen
@@ -207,7 +228,7 @@ export default function AuthScreen() {
                 <span className={label}>Email</span>
                 <span className={field}>
                   <Mail size={16} className="text-[rgb(var(--text-tertiary))]" />
-                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={input} autoComplete="email" required />
+                  <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" className={input} name="email" autoComplete="username" required />
                 </span>
               </label>
               <label className="block">
@@ -220,11 +241,21 @@ export default function AuthScreen() {
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="At least 6 characters"
                     className={input}
+                    name="password"
                     autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                     required
                   />
                 </span>
               </label>
+              {mode === 'login' && (
+                <label className="flex items-start gap-2 text-xs text-[rgb(var(--text-secondary))]">
+                  <input type="checkbox" checked={savePw} onChange={(e) => setSavePw(setSignin({ save: e.target.checked }).save)} className="mt-0.5 h-4 w-4 accent-[rgb(var(--accent))]" />
+                  <span>
+                    Save my password to Google Password Manager
+                    {!passwordManagerSupported() && <span className="block text-[11px] text-[rgb(var(--text-tertiary))]">In the Android app, Android’s Autofill (Google) offers to save it instead, if Autofill is on in phone settings.</span>}
+                  </span>
+                </label>
+              )}
               {mode === 'login' && (
                 <button type="button" onClick={() => { setForgot(true); setError(null) }} className="text-sm font-semibold text-[rgb(var(--accent))]">
                   Forgot password?

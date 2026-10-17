@@ -1,4 +1,5 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { stopSilentSignIn } from './signinPrefs'
 import type { Session } from '@supabase/supabase-js'
 import { supabase, appRedirectUrl } from './supabase'
 
@@ -203,6 +204,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    stopSilentSignIn()
     supabase.auth.signOut()
   }, [])
 

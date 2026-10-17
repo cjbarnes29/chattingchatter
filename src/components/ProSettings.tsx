@@ -170,13 +170,14 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
 
           {pro.hasPins && (
             <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
-              <p className="mb-2 text-sm font-semibold">Lock after leaving Chatter</p>
+              <p className="mb-1 text-sm font-semibold">When Chatter locks</p>
+              <p className="mb-2 text-xs text-[rgb(var(--text-secondary))]">After you switch to another app or turn the screen off, how long before your PIN or fingerprint is needed again.</p>
               <div role="radiogroup" aria-label="Auto-lock" className="flex flex-wrap gap-2">
-                {([[0, 'Immediately'], [60, 'After 1 minute'], [300, 'After 5 minutes']] as [AutoLock, string][]).map(([v, l]) => (
+                {([[0, 'Immediately'], [30, 'After 30 seconds'], [60, 'After 1 minute'], [300, 'After 5 minutes'], [900, 'After 15 minutes'], [-1, 'Only when Chatter is closed']] as [AutoLock, string][]).map(([v, l]) => (
                   <button key={v} role="radio" aria-checked={pro.autoLock === v} onClick={() => pro.setAutoLock(v)} className={`rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ${pro.autoLock === v ? 'bg-[rgb(var(--accent))] text-[rgb(var(--accent-foreground))] ring-[rgb(var(--accent))]' : 'ring-[rgb(var(--border))] text-[rgb(var(--text-secondary))]'}`}>{l}</button>
                 ))}
               </div>
-              <p className="mt-2 text-xs text-[rgb(var(--text-secondary))]">Confidential chats always lock again as soon as you leave. You can also add a <strong>Lock now</strong> button in Settings → Interface → Navigation shortcuts.</p>
+              <p className="mt-2 text-xs text-[rgb(var(--text-secondary))]">Chatter always locks when it’s closed and opened again, and decoy mode locks as soon as you leave it. Confidential chats always lock again as soon as you leave. You can also add a <strong>Lock now</strong> button in Settings → Interface → Navigation shortcuts.</p>
             </div>
           )}
 
