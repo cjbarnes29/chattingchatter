@@ -1,11 +1,10 @@
 # Getting Chatter on your phone (beginner guide)
 
 ## Get the Android APK (no setup needed)
-1. Open your GitHub repo: `github.com/cjbarnes29/chattingchatter`
-2. Click the **Actions** tab, then **Release Chatter** on the left.
-3. Click **Run workflow** → **Run workflow**.
-4. Wait about 10 minutes until the run shows a green tick.
-5. Click the **Releases** section on the repo home page. Open **latest APK** and download `chatter.apk`.
+- Stable: https://github.com/cjbarnes29/chattingchatter/releases/download/latest-apk/chatter.apk (rebuilt on every push to `main`).
+- To build it by hand: **Actions → Release Chatter APK → Run workflow**. Branches other than `main` publish to the `test-apk` release instead.
+
+Permissions, signing, building locally and the device test checklist: see [docs/ANDROID.md](docs/ANDROID.md).
 
 ## Install the APK on your phone
 1. Send `chatter.apk` to your phone (download it there, or send it to yourself by email/Drive).
@@ -22,6 +21,6 @@
 
 ## Google Play (later)
 1. Create a keystore: `keytool -genkey -v -keystore release.keystore -alias chatter -keyalg RSA -keysize 2048 -validity 10000`
-2. Add repo secrets: `ANDROID_KEYSTORE_BASE64` (`base64 -w0 release.keystore`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`.
+2. Add repo secrets: `ANDROID_KEYSTORE_BASE64` (`base64 -w0 release.keystore`), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD`. The APK workflow then builds a signed release APK (see docs/ANDROID.md → Signing).
 3. Add repo variable `ANDROID_STORE_READY` = `true` (Settings → Secrets and variables → Actions → Variables).
 4. Push a version tag; the signed `.aab` is attached to the release. Upload it in Play Console.

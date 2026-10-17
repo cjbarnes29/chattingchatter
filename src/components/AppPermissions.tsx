@@ -5,7 +5,7 @@ import { ensurePermission } from '../permissions'
 
 const ROWS: { name: PermName; icon: typeof Mic; title: string; desc: string }[] = [
   { name: 'microphone', icon: Mic, title: 'Microphone', desc: 'Voice and video calls' },
-  { name: 'camera', icon: Camera, title: 'Camera', desc: 'Video calls and taking a photo to send' },
+  { name: 'camera', icon: Camera, title: 'Camera', desc: 'Video calls' },
   { name: 'notifications', icon: Bell, title: 'Notifications', desc: 'Event reminders' },
 ]
 

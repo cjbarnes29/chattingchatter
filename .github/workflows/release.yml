@@ -52,10 +52,10 @@ jobs:
         env:
           VERSION_CODE: ${{ github.run_number }}
           # Optional release key (docs/ANDROID.md). Without these secrets a debug APK is built.
-          KEYSTORE_BASE64: ${{ secrets.CHATTER_KEYSTORE_BASE64 }}
-          CHATTER_KEYSTORE_PASSWORD: ${{ secrets.CHATTER_KEYSTORE_PASSWORD }}
-          CHATTER_KEY_ALIAS: ${{ secrets.CHATTER_KEY_ALIAS }}
-          CHATTER_KEY_PASSWORD: ${{ secrets.CHATTER_KEY_PASSWORD }}
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          CHATTER_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          CHATTER_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          CHATTER_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
           set +e
           task=assembleDebug
