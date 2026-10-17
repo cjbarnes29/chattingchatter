@@ -1,8 +1,10 @@
 # Chatter: full audit report
 
-**Date:** 17 October 2026 · **Branch:** `ccr-1056779d-cbnqch` · **Status:** committed locally only. Not pushed, not deployed, and the database is unchanged.
+**Date:** 17 October 2026 · **Repository:** `cjbarnes29/chattingchatter` · **Branch:** `ccr-1056779d-cbnqch` · **Database:** unchanged (the migration in §6 is not applied) · **Deployed:** no
 
-This report covers one change set:
+This report covers two change sets: part A (§1–§7) and part B, decoy mode with any wrong PIN (§8).
+
+Part A:
 
 - Editable Decoy Chats
 - Removal of the Ghost Canvas timer
@@ -248,5 +250,62 @@ These used a temporary harness with stand-ins for Supabase and sign-in (removed 
 
 ## 7. Pending approvals
 1. **Apply `supabase/migrations/chat_attachments.sql`** to production (private file storage for real chats).
-2. **Push** this branch, so CI builds the APK (including the Java change) and the PR can be reviewed.
+2. **Push** this branch: authorized on 17 October together with part B. CI can then build the APK (including the Java change).
 3. **Install and test** the resulting APK on a phone.
+
+---
+
+## 8. Part B: decoy mode opens with any wrong PIN
+
+### What was asked
+Remove the separate decoy PIN. The correct PIN opens the real app, and **any other PIN opens decoy mode** with only the fake chats. Keep fingerprint unlock for the real account, never expose real data, and don't weaken the lock.
+
+### How it worked before (inspected)
+- **Lock screen (`PinGate.tsx` → `pro.tsx` `verifyPin`):**
+  - Each PIN was checked against two salted PBKDF2 hashes, real and decoy.
+  - The real PIN opened the app, the decoy PIN opened decoy mode, and anything else showed **"Incorrect PIN"**.
+  - After 5 wrong PINs came a 30 s wait doubling to 15 min, shown as a countdown with the keypad disabled.
+- **Settings** had a "Decoy PIN" field, with checks that it differed from the real PIN.
+- **Fingerprint** (`biometric.ts`) only opens the real app. Since the earlier fix, a failed one opens nothing.
+
+### What changed
+| File | Change |
+|---|---|
+| `src/pro.tsx` | New `unlockPin()` for the lock screen. The real PIN returns `real`; **anything else returns `decoy`** and still counts as a wrong guess (logged for the owner). During a wrong-guess wait, every PIN returns `decoy`; the correct one isn't counted, and wrong ones keep counting and lengthen the wait. The slow PBKDF2 check always runs, so timing doesn't hint at the answer. `verifyPin()` (confidential chats, turning the lock off, logging out in the real app) now only knows "real / wrong / wait" and **never opens decoy**. The decoy PIN hash, `setDecoyPin`, `clearDecoy` and `matchPin` are removed, and an old stored decoy PIN hash is **deleted** on load. **Also fixed:** PIN data now loads before the first render (see below). |
+| `src/components/PinGate.tsx` | New `mode`. `unlock` (lock screen): no "incorrect" message and no countdown; the keypad always works. `confirm`: only the real PIN, with errors. The fingerprint path is unchanged (a verified check opens the real app; otherwise nothing opens). |
+| `src/App.tsx` | Lock screen uses `mode="unlock"`. **Decoy mode locks as soon as the app is left**, whatever the auto-lock setting, so a mistyped PIN is fixed by leaving and coming back. |
+| `src/components/Settings.tsx` | Logging out from the real app needs the real PIN (`confirm`). From decoy mode any PIN logs out, as before, so logging out doesn't reveal the PIN was wrong. Wording updated. |
+| `src/components/ProSettings.tsx` | Decoy PIN field and checks removed; one PIN field. Explains that any other PIN opens decoy mode, that wrong PINs still count, and what to do after a typo. The decoy chat list shows whenever a PIN lock is on. |
+| `DecoyManager.tsx`, `decoyModel.ts`, `entitlements.ts`, `Innovations.tsx`, `Landing.tsx`, `website/index.html` | Wording: "any other PIN" instead of "decoy PIN". The website FAQ no longer claims a rejected fingerprint opens decoy chats (it hasn't since the earlier fix). |
+
+### Security bug found while testing (existing before this change, now fixed)
+**On every launch, the real app was drawn and started loading real data before the lock screen appeared.**
+- The PIN settings were read in an effect, *after* the first render. For that first render the app thought no PIN was set, so it mounted the real inbox.
+- That one render began loading messages, groups, contacts, stories and events, and subscribed to live updates, then the lock screen replaced it.
+- **Fix:** the PIN settings are now read before the first render.
+- **Evidence:** before the fix, the test that enters a wrong PIN recorded `from:messages`, `from:contacts`, `from:stories`, `channel:messages-…`, `from:chat_prefs` and more. After it, nothing from the real account loads at the lock screen or in decoy mode (empty call list).
+
+### Test results: 50 / 50 pass
+Real `App.tsx` gate (`Root`), real `ProProvider` and `PinGate`, Chromium. The account sign-in and Supabase were replaced by a stand-in that records every call. Each PIN was stored the way the app stores it (salted PBKDF2, 210,000 rounds).
+
+| Area | Checks |
+|---|---|
+| Correct PIN | Locked at start. **Nothing from the real account loads before the PIN.** The correct PIN opens the real app; the counter stays at 0; no page errors. |
+| Wrong PINs | 9876, 000000, 1235 and 12345 all open decoy mode. No "incorrect" message. The wrong PIN is counted and logged. No real-app screens appear. **No real data loaded** (no messages/contacts/profiles/groups/stories/events/channels/RPC/storage). **Sending in decoy mode never touches real conversations**; the message is stored with the decoy chats only. |
+| Typo recovery | A typo opens decoy; leaving the app locks it at once even with 5-minute auto-lock. The real PIN then opens the real app, and the owner sees "1 wrong PIN was tried". The counter resets. The real app keeps its own auto-lock setting. |
+| Repeated attempts | 5 wrong PINs start a wait (stored), but the screen shows no countdown and the keypad stays usable. **The correct PIN during the wait opens decoy** and isn't counted. A wrong PIN during the wait counts and lengthens it to 60 s. After the wait, the correct PIN opens the real app ("6 wrong PINs were tried"), and the counter and wait reset. |
+| App restart | The wait survives a restart. Restarting after a real unlock, or from decoy mode, locks again. |
+| Old data | An old decoy PIN hash is deleted on load; that PIN now opens decoy as a wrong PIN and is counted. An old-format real PIN still works and is upgraded to PBKDF2. |
+| Fingerprint | A verified check opens the real app. **A rejected or cancelled check opens nothing (not decoy).** A result without the "user verified" flag opens nothing. A verified fingerprint still opens the real app during a wrong-PIN wait. These used a stand-in for the browser's credential API with the same responses as the device. |
+| Inside the real app | Confirming log out with a wrong PIN shows "Incorrect PIN" and never opens decoy; the real PIN confirms. |
+| Settings | No decoy PIN field; the explanation is shown. An invalid PIN is refused. A new PIN is saved only as a salted hash. No page errors. |
+
+Plus: `tsc` 7 and `eslint` 23 (unchanged pre-existing issues), `vite build` passes, unit tests 15/15.
+
+### Trade-offs and limitations (by design, stated plainly)
+- **A mistyped PIN opens decoy mode,** not an error. Leave Chatter and come back to retry, or use the fingerprint. Settings explains this, but decoy mode itself never hints at it.
+- **During a wrong-guess wait, even the correct PIN opens decoy mode.** This keeps the guessing limit without revealing it. A real user who mistyped 5 times sees decoy chats until the wait ends (30 s at first, up to 15 min), or uses the fingerprint.
+- **Decoy mode is only as convincing as the fake chats you set up.** With none, decoy mode shows an empty inbox.
+- **This lock lives on the device, as before.** Someone with full access to the phone's storage could still try offline guesses against the PIN hash, which is slow by design. Your real messages remain protected by your account sign-in on the server.
+- **Shared app-wide settings:** in decoy mode, theme and interface changes (Settings → Interface/Appearance) apply to the whole app, including the real account's synced interface preferences. They contain no messages or contacts.
+- **Not tested on a real phone.** Android's fingerprint prompt goes through the native plugin, which was tested earlier only with a stand-in.

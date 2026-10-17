@@ -6,7 +6,7 @@ import { fmtWait } from '../pinLock'
 
 /* ---------- Confidential lock ---------- */
 /** Asks for proof before showing confidential content: the fingerprint/face check if it is set up,
- *  otherwise (or as a fallback) the real PIN. It never opens without one of them. The decoy PIN does
+ *  otherwise (or as a fallback) the real PIN. It never opens without one of them. A wrong PIN does
  *  not open it, and wrong PINs count towards the app lock's wrong-guess limit. */
 export function PrivateLock({ onUnlock, onCancel, title = 'Private messages locked', desc = 'Verify it’s you to read confidential messages in this chat.' }: { onUnlock: () => void; onCancel: () => void; title?: string; desc?: string }) {
   const [state, setState] = useState<'idle' | 'scanning' | 'fail'>('idle')

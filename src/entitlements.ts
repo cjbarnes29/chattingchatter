@@ -28,7 +28,7 @@ export type Feature = {
 export const FEATURES: Feature[] = [
   // privacy & security
   { id: 'appLock', group: 'privacy', name: 'PIN app lock', desc: 'Ask for a PIN when Chatter opens, with wrong-guess limits.', free: true, pro: true, status: 'live' },
-  { id: 'decoyChats', group: 'privacy', name: 'Decoy chats', desc: 'A separate decoy PIN opens harmless chats instead of your real ones.', free: 1, pro: true, status: 'live' },
+  { id: 'decoyChats', group: 'privacy', name: 'Decoy chats', desc: 'Any PIN other than yours opens harmless fake chats instead of your real ones.', free: 1, pro: true, status: 'live' },
   { id: 'confidentialChats', group: 'privacy', name: 'Confidential chats', desc: 'Lock chosen chats behind your PIN or fingerprint. Their previews are hidden.', free: 1, pro: true, status: 'live' },
   { id: 'autoLock', group: 'privacy', name: 'Auto-lock timer', desc: 'Lock straight away, or after 1 or 5 minutes in the background.', free: true, pro: true, status: 'live' },
   { id: 'intruderLog', group: 'privacy', name: 'Wrong-PIN alerts', desc: 'See how many wrong PINs were tried since you last unlocked.', free: true, pro: true, status: 'live' },

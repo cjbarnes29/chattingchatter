@@ -1,5 +1,5 @@
 import { createContext, useContext, useRef, useState } from 'react'
-import { Crown, Lock, EyeOff, Clock, Trash2, Check, Brush, Fingerprint, Download, Upload, Eye, ShieldOff, Info } from 'lucide-react'
+import { Crown, Lock, Clock, Trash2, Check, Brush, Fingerprint, Download, Upload, Eye, ShieldOff, Info } from 'lucide-react'
 import { usePro, type AutoLock, type Masterpiece } from '../pro'
 import { useAuth } from '../auth'
 import { bioUnlockEnabled, setBioUnlockEnabled, biometricEnrolled, enrollBiometric, verifyBiometric } from '../biometric'
@@ -56,7 +56,6 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const [bioMsg, setBioMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const decoyItems = useDecoyContacts()
   const [pin, setPin] = useState('')
-  const [decoy, setDecoy] = useState('')
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [offPin, setOffPin] = useState('')
   const [offOpen, setOffOpen] = useState(false)
@@ -68,18 +67,9 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
   const lockMax = limit('confidentialChats', pro.isPro)
 
   const savePins = async () => {
-    if (!pin && !decoy) return flash(false, pro.hasPins ? 'Enter a new real PIN or a decoy PIN.' : 'Enter a real PIN (4–6 digits).')
-    if (!pin && !pro.hasPins) return flash(false, 'Set your real PIN first.')
-    if (pin && !validPin(pin)) return flash(false, 'Real PIN must be 4–6 digits.')
-    if (decoy && !validPin(decoy)) return flash(false, 'Decoy PIN must be 4–6 digits.')
-    if (pin && decoy && pin === decoy) return flash(false, 'Decoy PIN must be different from your real PIN.')
-    // compare against the PIN that's already saved, both ways round, without counting as a guess
-    if (pin && !decoy && (await pro.matchPin(pin)) === 'decoy') return flash(false, 'That’s your decoy PIN. Pick a different real PIN.')
-    if (decoy && !pin && (await pro.matchPin(decoy)) === 'real') return flash(false, 'That’s your real PIN. Pick a different decoy PIN.')
-    if (pin) await pro.setRealPin(pin)
-    if (decoy) await pro.setDecoyPin(decoy)
+    if (!validPin(pin)) return flash(false, 'Your PIN must be 4–6 digits.')
+    await pro.setRealPin(pin)
     setPin('')
-    setDecoy('')
     flash(true, 'Saved.')
   }
 
@@ -89,7 +79,7 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
       setOffOpen(false)
       setBioUnlockEnabled(false)
       setBioOn(false)
-      flash(true, 'PIN lock is off. Decoy PIN and chat locks were removed too.')
+      flash(true, 'PIN lock is off. Decoy mode and chat locks are off too.')
     } else {
       setOffPin('')
       flash(false, 'That isn’t your current PIN.')
@@ -157,23 +147,22 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
         </div>
       </Section>
 
-      <Section title="PIN lock & decoy profile" id="pin">
+      <Section title="PIN lock & decoy mode" id="pin">
         <div className="rounded-2xl bg-[rgb(var(--bg-panel-soft))] p-4">
           <div className="mb-3 flex items-center gap-2 text-sm font-semibold"><Lock size={15} className="text-[rgb(var(--accent))]" /> PIN lock {pro.hasPins ? <span className="ml-auto flex items-center gap-1 text-xs text-[rgb(var(--accent))]"><Check size={12} /> On</span> : null}</div>
-          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN when it opens and before logging out. After 5 wrong PINs it makes you wait, longer each time. A separate decoy PIN opens a harmless chat history instead of your real one.</p>
+          <p className="mb-2 text-xs text-[rgb(var(--text-secondary))]">Chatter asks for your PIN when it opens and before logging out. <strong>Your PIN opens your real chats. Any other PIN opens decoy mode</strong>, which shows only the fake chats you set up in Settings → Decoy chats. The lock screen never says a PIN was wrong.</p>
+          <p className="mb-3 text-xs text-[rgb(var(--text-secondary))]">Wrong PINs still count: after 5 in a row, every PIN opens decoy mode for a while (30 seconds, doubling up to 15 minutes), and you’re told how many were tried next time you get in. If you see your decoy chats after typing your PIN, leave Chatter and try again, wait a few minutes, or use your fingerprint.</p>
           <div className="grid gap-2 sm:grid-cols-2">
-            <input inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={pro.hasPins ? 'New real PIN' : 'Real PIN (4–6 digits)'} aria-label="Real PIN" type="password" className={field} />
-            <input inputMode="numeric" value={decoy} onChange={(e) => setDecoy(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={pro.decoyPinHash ? 'New decoy PIN' : 'Decoy PIN (optional)'} aria-label="Decoy PIN" type="password" className={field} />
+            <input inputMode="numeric" value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder={pro.hasPins ? 'New PIN' : 'PIN (4–6 digits)'} aria-label="PIN" type="password" className={field} />
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-3">
-            <button onClick={savePins} className="rounded-xl bg-[rgb(var(--accent))] px-4 py-2 text-xs font-semibold text-[rgb(var(--accent-foreground))]">Save PINs</button>
-            {pro.decoyPinHash && <button onClick={pro.clearDecoy} className="flex items-center gap-1 text-xs font-semibold text-rose-500"><EyeOff size={13} /> Remove decoy PIN</button>}
+            <button onClick={savePins} className="rounded-xl bg-[rgb(var(--accent))] px-4 py-2 text-xs font-semibold text-[rgb(var(--accent-foreground))]">{pro.hasPins ? 'Change PIN' : 'Save PIN'}</button>
             {pro.hasPins && !offOpen && <button onClick={() => setOffOpen(true)} className="flex items-center gap-1 text-xs font-semibold text-rose-500"><ShieldOff size={13} /> Turn off PIN lock</button>}
             {msg && <span role="status" className={`text-xs ${msg.ok ? 'text-emerald-500' : 'text-rose-500'}`}>{msg.text}</span>}
           </div>
           {offOpen && (
             <form onSubmit={(e) => { e.preventDefault(); void turnOffPin() }} className="mt-3 flex flex-wrap items-center gap-2 rounded-xl bg-rose-500/10 p-3">
-              <input inputMode="numeric" type="password" value={offPin} onChange={(e) => setOffPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Current real PIN" aria-label="Current real PIN" className={`${field} w-40`} />
+              <input inputMode="numeric" type="password" value={offPin} onChange={(e) => setOffPin(e.target.value.replace(/\D/g, '').slice(0, 6))} placeholder="Current PIN" aria-label="Current PIN" className={`${field} w-40`} />
               <button type="submit" disabled={offPin.length < 4} className="rounded-xl bg-rose-500 px-3 py-2 text-xs font-semibold text-white disabled:opacity-50">Turn off</button>
               <button type="button" onClick={() => { setOffOpen(false); setOffPin('') }} className="text-xs font-semibold text-[rgb(var(--text-secondary))]">Cancel</button>
             </form>
@@ -196,9 +185,9 @@ function ProInner({ onUpgrade }: { onUpgrade: () => void }) {
             <p className="mt-1 text-xs text-[rgb(var(--text-secondary))]">Open a chat, tap the palette icon and choose <strong>Make this chat confidential</strong>. It then needs your PIN or fingerprint to open, and its preview and notifications hide the message text. {!pro.isPro && 'Free accounts can lock 1 chat; Pro locks as many as you like.'}</p>
           </div>
 
-          {pro.decoyPinHash && (
+          {pro.hasPins && (
             <div className="mt-4 border-t border-[rgb(var(--border))] pt-3">
-              <p className="mb-2 text-xs font-semibold">Chats shown under the decoy PIN</p>
+              <p className="mb-2 text-xs font-semibold">Chats shown in decoy mode</p>
               <ul className="space-y-1">
                 {decoyItems.length === 0 && <li className="py-1 text-xs text-[rgb(var(--text-secondary))]">No decoy chats. Add some in Settings → Decoy chats.</li>}
                 {decoyItems.map((c) => (

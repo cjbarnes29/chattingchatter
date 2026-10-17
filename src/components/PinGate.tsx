@@ -6,7 +6,10 @@ import { fmtWait } from '../pinLock'
 
 type Props = {
   onUnlock: () => void
-  onDecoy: () => void
+  /** 'unlock' (the app's lock screen): any PIN other than the real one opens decoy mode, with no error.
+   *  'confirm' (e.g. confirming log out in the real app): only the real PIN works; wrong PINs show an error. */
+  mode?: 'unlock' | 'confirm'
+  onDecoy?: () => void
   title?: string
   subtitle?: string
   onCancel?: () => void
@@ -15,12 +18,15 @@ type Props = {
 }
 
 /** Asks for the PIN. Shown at launch for users who set a PIN, and again before logging out.
- *  The real PIN opens Chatter; the decoy PIN (if set) opens the harmless decoy profile.
+ *  Lock screen ('unlock'): the real PIN opens Chatter; any other PIN opens the decoy chats. It never says a
+ *  PIN was wrong and never shows the wrong-guess wait, so someone guessing can't tell. Wrong PINs still count:
+ *  after 5 there's a wait that doubles each time (up to 15 minutes), during which every PIN opens decoy mode.
  *  PINs are 4-6 digits: a 6th digit checks automatically, shorter PINs are confirmed with the check key.
- *  After 5 wrong PINs there is a wait that doubles each time (up to 15 minutes).
  *  A fingerprint or face check only ever unlocks the real app. If it fails or is cancelled, nothing opens. */
-export function PinGate({ onUnlock, onDecoy, title = 'Enter your PIN', subtitle = 'Chatter is locked', onCancel, bioUnlock = false }: Props) {
-  const { verifyPin, lockedUntil } = usePro()
+export function PinGate({ onUnlock, onDecoy, mode = 'unlock', title = 'Enter your PIN', subtitle = 'Chatter is locked', onCancel, bioUnlock = false }: Props) {
+  const { verifyPin, unlockPin, lockedUntil: storedWait } = usePro()
+  // the lock screen behaves the same during a wait, so it doesn't show one
+  const lockedUntil = mode === 'confirm' ? storedWait : 0
   const [pin, setPinState] = useState('')
   // the latest digits, readable from key handlers without re-subscribing
   const pinRef = useRef('')
@@ -47,15 +53,20 @@ export function PinGate({ onUnlock, onDecoy, title = 'Enter your PIN', subtitle 
   const check = useCallback(async (value: string) => {
     if (checking || value.length < 4) return
     setChecking(true)
+    if (mode === 'unlock') {
+      const r = await unlockPin(value)
+      setPin('')
+      setChecking(false)
+      return r === 'real' ? onUnlock() : onDecoy?.()
+    }
     const r = await verifyPin(value)
     if (r === 'real') return onUnlock()
-    if (r === 'decoy') return onDecoy()
     setNow(Date.now())
     setError(r === 'none')
     setPin('')
     setChecking(false)
     if (r === 'none') window.setTimeout(() => setError(false), 1400)
-  }, [checking, verifyPin, onUnlock, onDecoy, setPin])
+  }, [checking, mode, unlockPin, verifyPin, onUnlock, onDecoy, setPin])
 
   const tryBio = async () => {
     if (busy.current) return

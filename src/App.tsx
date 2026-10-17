@@ -57,6 +57,8 @@ function Gate() {
   const [intrusions, setIntrusions] = useState<number[]>([])
   const [exitOpen, setExitOpen] = useState(false)
   useBackTrap(() => setExitOpen(true))
+  const unlockedRef = useRef(unlocked)
+  unlockedRef.current = unlocked
   const setUnlocked = useCallback((v: 'none' | 'real' | 'decoy') => {
     if (v === 'none') forgetOpenedChats()
     setUnlockedState(v)
@@ -74,7 +76,8 @@ function Gate() {
     const onVis = () => {
       if (document.visibilityState === 'hidden') {
         hiddenAt = Date.now()
-        if (autoLock === 0) setUnlocked('none')
+        // decoy mode always locks straight away, so a mistyped PIN is fixed by just leaving and coming back
+        if (autoLock === 0 || unlockedRef.current === 'decoy') setUnlocked('none')
         forgetOpenedChats()
       } else if (hiddenAt && Date.now() - hiddenAt >= autoLock * 1000) {
         setUnlocked('none')
@@ -113,8 +116,9 @@ function Gate() {
   if (onTermsPage) body = <Terms onBack={() => { window.location.href = '/' }} />
   else if (recovering) body = <ResetPassword />
   else if (!user) body = <AuthScreen />
-  // The lock is enforced whenever a PIN exists, even if the Pro plan has lapsed
-  else if (hasPins && unlocked === 'none') body = <PinGate onUnlock={unlockReal} onDecoy={() => setUnlocked('decoy')} bioUnlock={bioUnlock} />
+  // The lock is enforced whenever a PIN exists, even if the Pro plan has lapsed.
+  // The real PIN (or a verified fingerprint) opens the real app; any other PIN opens decoy mode.
+  else if (hasPins && unlocked === 'none') body = <PinGate mode="unlock" onUnlock={unlockReal} onDecoy={() => setUnlocked('decoy')} bioUnlock={bioUnlock} />
   else if (unlocked === 'decoy' && hasPins) body = <DecoyApp />
   else body = <App />
 

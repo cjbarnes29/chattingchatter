@@ -35,7 +35,7 @@ const groups: { title: string; blurb: string; items: Feature[] }[] = [
     title: 'Private by design',
     blurb: 'Controls that decide who sees what on your phone.',
     items: [
-      { i: Lock, t: 'PIN lock and decoy PIN', d: 'Chatter asks for your PIN on opening and when you log out. A second, decoy PIN opens a different set of chats. Free accounts get 1 decoy chat.' },
+      { i: Lock, t: 'PIN lock and decoy mode', d: 'Chatter asks for your PIN on opening and when you log out. Any other PIN opens fake chats you set up, and the lock screen never says it was wrong. Free accounts get 1 decoy chat.' },
       { i: KeyRound, t: 'Locked messages', d: 'Lock individual messages behind your fingerprint, face or phone passcode, on phones that support it.' },
       { i: ShieldCheck, t: 'Protected account changes', d: 'Changing your password needs a code sent to your email. Changing your email needs the answer to your security question.' },
       { i: UserRound, t: 'Online status you control', d: 'Show as online, offline or automatic. Turn read receipts off if you prefer.' },
@@ -82,7 +82,7 @@ const notYet = [
 const faqs: [string, string][] = [
   ['Is Chatter free?', 'Yes. Chatter Pro is optional. You can start the 7-day trial from inside the app. Payments are not connected yet, so nothing is charged. Planned prices are $2.99 a month or $24.99 a year.'],
   ['Are my messages end-to-end encrypted?', 'No. Messages are stored on Chatter’s servers and protected by account rules, so only you and the person you message can read them. Only Pro canvas keepsakes are encrypted, on your device, with your own password.'],
-  ['How does fingerprint unlock work?', 'It is a Pro setting under Privacy & security and is off by default. Set a real PIN and a decoy PIN first. Then swipe up on the lock screen. A fingerprint or face your phone accepts opens your real chats. One it rejects opens your decoy chats. Android reports a cancelled prompt the same way as a wrong fingerprint, so cancelling also opens the decoy chats.'],
+  ['How does fingerprint unlock work?', 'It is a Pro setting under Privacy & security and is off by default. Set a PIN first; it stays as the backup. Then tap or swipe up on the lock screen. A fingerprint or face your phone accepts opens your real chats. If it is rejected or cancelled, nothing opens and you can use your PIN.'],
   ['Does it work offline?', 'The app opens offline, but sending and receiving messages needs an internet connection.'],
   ['How do I update?', 'The web version shows an Update button when a new version is ready. On Android, download the newest APK from this page and install it over the old one.'],
   ['Which devices are supported?', 'Android through the APK download, and any modern browser. On a computer you can install the web version from Chrome or Edge.'],

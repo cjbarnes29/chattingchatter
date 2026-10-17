@@ -1,4 +1,4 @@
-/** Decoy chats: the fake contacts and conversations shown under the decoy PIN.
+/** Decoy chats: the fake contacts and conversations shown when a wrong PIN is entered.
  *  Pure functions (no React, storage or network) so the rules can be tested on their own.
  *  Nothing here ever reads real chats, contacts or accounts. */
 

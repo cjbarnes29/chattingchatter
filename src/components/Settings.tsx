@@ -134,12 +134,12 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
     { id: 'account', icon: <KeyRound size={16} />, title: 'Account', desc: 'Password, email and security question', hideInDecoy: true },
     { id: 'interface', icon: <LayoutDashboard size={16} />, title: 'Interface', desc: 'Theme, layout, navigation, dashboard and presets' },
     { id: 'appearance', icon: dark ? <Moon size={16} /> : <Sun size={16} />, title: 'Appearance', desc: 'Text, colours, chat screen and animations' },
-    { id: 'privacy', icon: <ShieldCheck size={16} />, title: 'Privacy & security', desc: 'Receipts, locks, PIN and decoy PIN', hideInDecoy: true },
+    { id: 'privacy', icon: <ShieldCheck size={16} />, title: 'Privacy & security', desc: 'Receipts, locks and PIN', hideInDecoy: true },
     { id: 'notifications', icon: <Bell size={16} />, title: 'Notifications & sounds', desc: 'Previews, quick replies, sounds, alarms' },
     ...(isNative() ? [{ id: 'permissions' as const, icon: <Smartphone size={16} />, title: 'App permissions', desc: 'Camera, microphone, notifications, fingerprint' }] : []),
     { id: 'gestures', icon: <Hand size={16} />, title: 'Chats & gestures', desc: 'Swipes, taps and shortcuts' },
     { id: 'ghost', icon: <Palette size={16} />, title: 'Ghost Canvas', desc: 'Ink, fade-out time and grid' },
-    { id: 'decoy', icon: <EyeOff size={16} />, title: 'Decoy chats', desc: 'Create and edit the fake chats the decoy PIN shows', hideInDecoy: true },
+    { id: 'decoy', icon: <EyeOff size={16} />, title: 'Decoy chats', desc: 'Fake chats shown when a wrong PIN is entered', hideInDecoy: true },
     { id: 'pro', icon: <Crown size={16} />, title: 'Chatter Pro', desc: isPro ? 'Plan, focus mode and tools' : 'Unlock decoy profiles, canvas toolkit and more', hideInDecoy: true },
   ]
   const items = MENU.filter((m) => !(decoy && m.hideInDecoy))
@@ -148,7 +148,10 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
   return (
     <div className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/40 md:items-center md:p-6" onClick={close}>
       {confirmOut && (
+        // In the real app only the real PIN logs out. In decoy mode any PIN does, exactly like the lock
+        // screen, so logging out never reveals that the PIN used to get in was a wrong one.
         <PinGate
+          mode={decoy ? 'unlock' : 'confirm'}
           title="Confirm log out"
           subtitle="Enter your PIN to log out"
           onCancel={() => setConfirmOut(false)}
@@ -293,7 +296,7 @@ export default function Settings({ open, onClose, dark, onToggleDark, onUpgrade,
                 </Row>
                 {bioMsg && <p role="status" className={`px-4 py-2 text-xs ${bioMsg.ok ? 'text-emerald-500' : 'text-rose-500'}`}>{bioMsg.text}</p>}
               </div>
-              <SubTitle>App lock & decoy PIN</SubTitle>
+              <SubTitle>App lock & decoy mode</SubTitle>
               <ProSettings only="pin" onUpgrade={onUpgrade} />
             </>
           )}

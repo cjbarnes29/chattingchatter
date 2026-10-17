@@ -27,7 +27,7 @@ function SavedNote() {
     : <p className="flex items-center gap-1 text-[11px] text-[rgb(var(--text-tertiary))]"><Check size={12} /> Saved on this device only</p>
 }
 
-/** Settings → Decoy chats: create and edit the fake contacts and conversations shown under the decoy PIN.
+/** Settings → Decoy chats: create and edit the fake contacts and conversations shown in decoy mode (any wrong PIN).
  *  Everything stays on this device; nothing here reads real chats, contacts or files. */
 export default function DecoyManager() {
   const contacts = useDecoyContacts()
@@ -46,7 +46,7 @@ export default function DecoyManager() {
   return (
     <div className="space-y-3 px-5 py-3">
       <p className="text-xs text-[rgb(var(--text-secondary))]">
-        These fake chats appear when someone enters your <b>decoy PIN</b>. Write both sides of each conversation, set the times, and preview it. They’re kept on this device only and never mix with your real chats. Set the decoy PIN under Privacy &amp; security.
+        These fake chats appear when <b>any PIN other than yours</b> is entered on the lock screen. Write both sides of each conversation, set the times, and preview it. They’re kept on this device only and never mix with your real chats. Decoy mode needs a PIN lock (Privacy &amp; security).
       </p>
       {!isPro && <p className="flex items-center gap-1.5 rounded-xl bg-[rgb(var(--accent-soft))] px-3 py-2 text-xs font-semibold text-[rgb(var(--accent))]"><Crown size={13} /> Free plan shows 1 decoy chat. Chatter Pro shows them all.</p>}
       <ul className="space-y-2" aria-label="Decoy chats">

@@ -27,7 +27,6 @@ type ProData = {
   trialEndsAt: number | null
   /** the free trial can be used once per account on this device */
   trialUsed: boolean
-  decoyPinHash: string | null
   realPinHash: string | null
   decoyChatIds: string[]
   focus: FocusSchedule
@@ -42,7 +41,8 @@ type ProData = {
   autoLock: AutoLock
 }
 
-export type PinResult = 'real' | 'decoy' | 'none' | 'locked'
+/** For screens inside the real app (confidential chats, turning the lock off, logging out). */
+export type PinResult = 'real' | 'none' | 'locked'
 
 type ProState = ProData & {
   isPro: boolean
@@ -51,15 +51,15 @@ type ProState = ProData & {
   cancelPlan: () => void
   setBilling: (b: Billing) => void
   setRealPin: (pin: string) => Promise<void>
-  setDecoyPin: (pin: string) => Promise<void>
-  clearDecoy: () => void
   /** turns the PIN lock off; needs the current real PIN */
   removePins: (currentPin: string) => Promise<boolean>
   setDecoyChatIds: (ids: string[]) => void
-  /** Unlock check for lock screens: counts wrong guesses and enforces waits. */
+  /** The app's lock screen: the real PIN opens Chatter, any other PIN opens decoy mode.
+   *  Wrong PINs still count as guesses; while a wrong-guess wait is running even the real PIN opens decoy,
+   *  so the screen never reveals whether a PIN was right or how many tries are left. */
+  unlockPin: (pin: string) => Promise<'real' | 'decoy'>
+  /** PIN checks inside the real app: counts wrong guesses and enforces waits. Never opens decoy mode. */
   verifyPin: (pin: string) => Promise<PinResult>
-  /** Compare without counting as a guess (used when choosing new PINs in settings). */
-  matchPin: (pin: string) => Promise<'real' | 'decoy' | 'none'>
   hasPins: boolean
   /** intrusions seen at the last real unlock, for the "wrong PINs were tried" notice */
   takeIntrusions: () => number[]
@@ -77,7 +77,7 @@ type ProState = ProData & {
 const DEFAULT_FOCUS: FocusSchedule = { enabled: false, days: [true, true, true, true, true, false, false], startHour: 9, endHour: 17, meetingMode: false, allowFavorites: true }
 const DEFAULT: ProData = {
   plan: 'free', billing: 'yearly', renewsAt: null, trialEndsAt: null, trialUsed: false,
-  decoyPinHash: null, realPinHash: null, decoyChatIds: [], focus: DEFAULT_FOCUS, masterpieces: [],
+  realPinHash: null, decoyChatIds: [], focus: DEFAULT_FOCUS, masterpieces: [],
   failedAttempts: 0, lockedUntil: 0, intrusions: [], lockedChatIds: [], autoLock: 0,
 }
 
@@ -94,7 +94,13 @@ function load(email: string): ProData {
   try {
     const raw = localStorage.getItem(key(email))
     if (!raw) return DEFAULT
-    const d = { ...DEFAULT, ...JSON.parse(raw) } as ProData
+    const parsed = JSON.parse(raw) as Record<string, unknown>
+    // separate decoy PINs are gone (any wrong PIN opens decoy mode now): delete the old hash for good
+    if ('decoyPinHash' in parsed) {
+      delete parsed.decoyPinHash
+      try { localStorage.setItem(key(email), JSON.stringify(parsed)) } catch { /* ignore */ }
+    }
+    const d = { ...DEFAULT, ...parsed } as ProData
     // older saves: a past trial counts as used; focus gains new fields
     return { ...d, trialUsed: d.trialUsed || !!d.trialEndsAt, focus: { ...DEFAULT_FOCUS, ...d.focus } }
   } catch {
@@ -105,11 +111,15 @@ function load(email: string): ProData {
 export function ProProvider({ children }: { children: ReactNode }) {
   const { user } = useAuth()
   const email = user?.email ?? ''
-  const [data, setData] = useState<ProData>(DEFAULT)
-
-  useEffect(() => {
-    if (email) setData(load(email))
-  }, [email])
+  // Loaded before the first render (not in an effect), so the lock screen is decided before anything
+  // is drawn. Loading it a render late let the real app mount, and start loading real chats, for a moment.
+  const [state, setState] = useState(() => ({ email, data: email ? load(email) : DEFAULT }))
+  let data = state.data
+  if (state.email !== email) {
+    data = email ? load(email) : DEFAULT
+    setState({ email, data })
+  }
+  const setData = useCallback((next: ProData) => setState({ email, data: next }), [email])
 
   // Every update starts from the newest copy, so quick changes in a row never undo each other.
   const latest = useRef(data)
@@ -127,7 +137,7 @@ export function ProProvider({ children }: { children: ReactNode }) {
         }
       }
     },
-    [email],
+    [email, setData],
   )
 
   // plan expiry
@@ -154,51 +164,50 @@ export function ProProvider({ children }: { children: ReactNode }) {
     const h = await hashPin(pin)
     update((d) => ({ ...d, realPinHash: h, failedAttempts: 0, lockedUntil: 0 }))
   }, [update])
-  const setDecoyPin = useCallback(async (pin: string) => {
-    const h = await hashPin(pin)
-    update((d) => ({ ...d, decoyPinHash: h }))
-  }, [update])
-  const clearDecoy = useCallback(() => update((d) => ({ ...d, decoyPinHash: null, decoyChatIds: [] })), [update])
   const setDecoyChatIds = useCallback((ids: string[]) => update((d) => ({ ...d, decoyChatIds: ids })), [update])
 
-  const matchPin = useCallback<ProState['matchPin']>(async (pin) => {
-    const d = latest.current
-    const real = await checkPin(pin, d.realPinHash, 'real')
-    if (real.ok) return 'real'
-    const decoy = await checkPin(pin, d.decoyPinHash, 'decoy')
-    return decoy.ok ? 'decoy' : 'none'
-  }, [])
-
-  const verifyPin = useCallback<ProState['verifyPin']>(async (pin) => {
-    const d = latest.current
-    if (Date.now() < d.lockedUntil) return 'locked'
-    // check both every time so the time taken doesn't hint which PIN exists
-    const [real, decoy] = await Promise.all([checkPin(pin, d.realPinHash, 'real'), checkPin(pin, d.decoyPinHash, 'decoy')])
-    if (real.ok) {
-      const upgraded = real.legacy ? await hashPin(pin) : null
-      update((x) => ({ ...x, failedAttempts: 0, lockedUntil: 0, realPinHash: upgraded ?? x.realPinHash }))
-      return 'real'
-    }
-    if (decoy.ok) {
-      // the decoy PIN doesn't reset the guess counter, or it could be used to get unlimited guesses
-      if (decoy.legacy) {
-        const h = await hashPin(pin)
-        update((x) => ({ ...x, decoyPinHash: h }))
-      }
-      return 'decoy'
-    }
+  const recordWrongPin = useCallback(() => {
     update((x) => {
       const failedAttempts = x.failedAttempts + 1
       const wait = lockoutMs(failedAttempts)
       return { ...x, failedAttempts, lockedUntil: wait ? Date.now() + wait : 0, intrusions: [...x.intrusions, Date.now()].slice(-50) }
     })
-    return 'none'
   }, [update])
+  const acceptRealPin = useCallback(async (pin: string, legacy: boolean) => {
+    const upgraded = legacy ? await hashPin(pin) : null
+    update((x) => ({ ...x, failedAttempts: 0, lockedUntil: 0, realPinHash: upgraded ?? x.realPinHash }))
+  }, [update])
+
+  const unlockPin = useCallback<ProState['unlockPin']>(async (pin) => {
+    const d = latest.current
+    const waiting = Date.now() < d.lockedUntil
+    // always run the slow check, so how long it takes doesn't hint at the answer or the wait
+    const real = await checkPin(pin, d.realPinHash, 'real')
+    if (real.ok && !waiting) {
+      await acceptRealPin(pin, real.legacy)
+      return 'real'
+    }
+    // the right PIN during a wait opens decoy without counting; anything else counts as a wrong guess
+    if (!real.ok) recordWrongPin()
+    return 'decoy'
+  }, [acceptRealPin, recordWrongPin])
+
+  const verifyPin = useCallback<ProState['verifyPin']>(async (pin) => {
+    const d = latest.current
+    if (Date.now() < d.lockedUntil) return 'locked'
+    const real = await checkPin(pin, d.realPinHash, 'real')
+    if (real.ok) {
+      await acceptRealPin(pin, real.legacy)
+      return 'real'
+    }
+    recordWrongPin()
+    return 'none'
+  }, [acceptRealPin, recordWrongPin])
 
   const removePins = useCallback<ProState['removePins']>(async (currentPin) => {
     if ((await verifyPin(currentPin)) !== 'real') return false
     // confidential chats are opened with the PIN, so their locks go with it
-    update((d) => ({ ...d, realPinHash: null, decoyPinHash: null, decoyChatIds: [], lockedChatIds: [], failedAttempts: 0, lockedUntil: 0, intrusions: [] }))
+    update((d) => ({ ...d, realPinHash: null, decoyChatIds: [], lockedChatIds: [], failedAttempts: 0, lockedUntil: 0, intrusions: [] }))
     return true
   }, [update, verifyPin])
 
@@ -256,11 +265,11 @@ export function ProProvider({ children }: { children: ReactNode }) {
   const value = useMemo<ProState>(
     () => ({
       ...data, isPro, trialActive, hasPins: !!data.realPinHash,
-      startTrial, cancelPlan, setBilling, setRealPin, setDecoyPin, clearDecoy, removePins, setDecoyChatIds,
-      verifyPin, matchPin, takeIntrusions, updateFocus, setChatLocked, setAutoLock,
+      startTrial, cancelPlan, setBilling, setRealPin, removePins, setDecoyChatIds,
+      unlockPin, verifyPin, takeIntrusions, updateFocus, setChatLocked, setAutoLock,
       saveMasterpiece, openMasterpiece, deleteMasterpiece, exportMasterpiece, importMasterpiece,
     }),
-    [data, isPro, trialActive, startTrial, cancelPlan, setBilling, setRealPin, setDecoyPin, clearDecoy, removePins, setDecoyChatIds, verifyPin, matchPin, takeIntrusions, updateFocus, setChatLocked, setAutoLock, saveMasterpiece, openMasterpiece, deleteMasterpiece, exportMasterpiece, importMasterpiece],
+    [data, isPro, trialActive, startTrial, cancelPlan, setBilling, setRealPin, removePins, setDecoyChatIds, unlockPin, verifyPin, takeIntrusions, updateFocus, setChatLocked, setAutoLock, saveMasterpiece, openMasterpiece, deleteMasterpiece, exportMasterpiece, importMasterpiece],
   )
 
   return <ProContext.Provider value={value}>{children}</ProContext.Provider>
